@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from '../../config';
-import { pool } from '../../config/database';
+import { pool, testConnection } from '../../config/database';
 import { AppError } from '../../shared/errors';
 import { HashService } from '../security/hash.service';
 import { JWTService } from '../security/jwt.service';
@@ -14,6 +14,11 @@ import { VehicleRepositoryPostgres } from '../database/repositories/vehicle.repo
 import { RegisterVehicleUseCase } from '../../application/use-cases/vehicles/register-vehicle.use-case';
 import { VehicleController } from './controllers/vehicle.controller';
 import { createVehicleRoutes } from './routes/vehicle.routes';
+import { DocumentoConductorRepositoryPostgres } from '../database/repositories/documento-conductor.repository.postgres';
+import { CloudinaryAdapter } from '../external/cloudinary.adapter';
+import { UploadDriverDocumentUseCase } from '../../application/use-cases/drivers/upload-driver-document.use-case';
+import { DocumentoConductorController } from './controllers/documento-conductor.controller';
+import { createDocumentoConductorRoutes } from './routes/documento-conductor.routes';
 
 const app = express();
 
@@ -34,6 +39,12 @@ const vehicleRepository = new VehicleRepositoryPostgres(pool);
 const registerVehicleUseCase = new RegisterVehicleUseCase(vehicleRepository);
 const vehicleController = new VehicleController(registerVehicleUseCase);
 
+// --- Inyección de dependencias (módulo Documentos de Conductor) ---
+const documentoRepository = new DocumentoConductorRepositoryPostgres(pool);
+const cloudinaryAdapter = new CloudinaryAdapter();
+const uploadDriverDocumentUseCase = new UploadDriverDocumentUseCase(documentoRepository, cloudinaryAdapter);
+const documentoConductorController = new DocumentoConductorController(uploadDriverDocumentUseCase);
+
 // Rutas
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
@@ -41,6 +52,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/vehicles', createVehicleRoutes(vehicleController));
+app.use('/api/documentos', createDocumentoConductorRoutes(documentoConductorController));
 
 // Middleware de manejo de errores
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -54,12 +66,16 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 // Iniciar servidor
 async function start() {
   try {
+    // Verificar conexión a la base de datos antes de aceptar peticiones
+    await testConnection();
+
     app.listen(config.port, () => {
       console.log(`🚀 Servidor corriendo en http://localhost:${config.port}`);
       console.log(`📋 Endpoints disponibles:`);
       console.log(`   POST http://localhost:${config.port}/api/auth/register`);
       console.log(`   POST http://localhost:${config.port}/api/auth/login`);
       console.log(`   POST http://localhost:${config.port}/api/vehicles/register`);
+      console.log(`   POST http://localhost:${config.port}/api/documentos/upload`);
     });
   } catch (error) {
     console.error('❌ Error iniciando el servidor:', error);
