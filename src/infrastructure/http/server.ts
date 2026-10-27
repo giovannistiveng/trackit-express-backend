@@ -10,6 +10,10 @@ import { RegisterUserUseCase } from '../../application/use-cases/auth/register-u
 import { LoginUserUseCase } from '../../application/use-cases/auth/login-user.use-case';
 import { AuthController } from './controllers/auth.controller';
 import { createAuthRoutes } from './routes/auth.routes';
+import { VehicleRepositoryPostgres } from '../database/repositories/vehicle.repository.postgres';
+import { RegisterVehicleUseCase } from '../../application/use-cases/vehicles/register-vehicle.use-case';
+import { VehicleController } from './controllers/vehicle.controller';
+import { createVehicleRoutes } from './routes/vehicle.routes';
 
 const app = express();
 
@@ -25,12 +29,18 @@ const registerUserUseCase = new RegisterUserUseCase(userRepository, hashService)
 const loginUserUseCase = new LoginUserUseCase(userRepository, hashService, jwtService);
 const authController = new AuthController(registerUserUseCase, loginUserUseCase);
 
+// --- Inyección de dependencias (módulo Vehículos) ---
+const vehicleRepository = new VehicleRepositoryPostgres(pool);
+const registerVehicleUseCase = new RegisterVehicleUseCase(vehicleRepository);
+const vehicleController = new VehicleController(registerVehicleUseCase);
+
 // Rutas
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
 });
 
 app.use('/api/auth', createAuthRoutes(authController));
+app.use('/api/vehicles', createVehicleRoutes(vehicleController));
 
 // Middleware de manejo de errores
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -49,6 +59,7 @@ async function start() {
       console.log(`📋 Endpoints disponibles:`);
       console.log(`   POST http://localhost:${config.port}/api/auth/register`);
       console.log(`   POST http://localhost:${config.port}/api/auth/login`);
+      console.log(`   POST http://localhost:${config.port}/api/vehicles/register`);
     });
   } catch (error) {
     console.error('❌ Error iniciando el servidor:', error);
