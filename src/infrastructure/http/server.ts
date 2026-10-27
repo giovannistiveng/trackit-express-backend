@@ -6,8 +6,8 @@ import { AppError } from '../../shared/errors';
 import { HashService } from '../security/hash.service';
 import { JWTService } from '../security/jwt.service';
 import { UserRepositoryPostgres } from '../database/repositories/user.repository.postgres';
-import { RegisterUserUseCase } from '../../../application/use-cases/auth/register-user.use-case';
-import { LoginUserUseCase } from '../../../application/use-cases/auth/login-user.use-case';
+import { RegisterUserUseCase } from '../../application/use-cases/auth/register-user.use-case';
+import { LoginUserUseCase } from '../../application/use-cases/auth/login-user.use-case';
 import { AuthController } from './controllers/auth.controller';
 import { createAuthRoutes } from './routes/auth.routes';
 
