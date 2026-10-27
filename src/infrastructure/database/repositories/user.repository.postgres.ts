@@ -9,7 +9,7 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
     const query = `
       INSERT INTO Usuario (nombre, correo, password_hash, id_rol)
       VALUES ($1, $2, $3, $4)
-      RETURNING id_usuario, nombre, correo, password_hash, id_rol, created_at, updated_at
+      RETURNING id_usuario, nombre, correo, password_hash, id_rol
     `;
     const values = [user.nombre, user.correo, user.password_hash, user.id_rol];
     const result = await this.pool.query(query, values);
@@ -31,6 +31,8 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
     return this.mapRow(result.rows[0]);
   }
 
+
+
   private mapRow(row: any): User {
     return {
       id: row.id_usuario,
@@ -38,8 +40,6 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
       correo: row.correo,
       password_hash: row.password_hash,
       id_rol: row.id_rol,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
     };
   }
 }
