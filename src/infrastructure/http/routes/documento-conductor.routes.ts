@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { DocumentoConductorController } from '../controllers/documento-conductor.controller';
-import { AppError } from '../../shared/errors';
+import { AppError } from '../../../shared/errors';
 
 export function createDocumentoConductorRoutes(controller: DocumentoConductorController): Router {
   const router = Router();
