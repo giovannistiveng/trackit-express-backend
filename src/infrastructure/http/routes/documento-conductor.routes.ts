@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { DocumentoConductorController } from '../controllers/documento-conductor.controller';
 import { AppError } from '../../../shared/errors';
@@ -19,17 +19,23 @@ export function createDocumentoConductorRoutes(controller: DocumentoConductorCon
     },
   });
 
-  router.post('/upload', upload.single('archivo'), async (req, res, next) => {
-    try {
-      await controller.upload(req, res);
-    } catch (error) {
-      if (error instanceof AppError) {
-        return res.status(error.statusCode).json({ error: error.message, statusCode: error.statusCode });
+  router.post(
+    '/upload',
+    upload.single('archivo'),
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        await controller.upload(req, res);
+      } catch (error) {
+        if (error instanceof AppError) {
+          res.status(error.statusCode).json({ error: error.message, statusCode: error.statusCode });
+          return;
+        }
+        // Errores de multer (tamaño excedido, tipo inválido, etc.)
+        const message = error instanceof Error ? error.message : 'Error al procesar el archivo';
+        res.status(400).json({ error: message });
       }
-      // Errores de multer (tamaño excedido, tipo inválido, etc.)
-      return res.status(400).json({ error: error instanceof Error ? error.message : 'Error al procesar el archivo' });
     }
-  });
+  );
 
   return router;
 }
