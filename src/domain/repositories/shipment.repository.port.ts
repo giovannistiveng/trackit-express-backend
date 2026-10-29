@@ -6,6 +6,31 @@ export interface HistorialEstadoRow {
   fecha_cambio: Date;
 }
 
+/** Envío con nombres de cliente y conductor (panel administrativo). */
+export interface EnvioAdmin extends Envio {
+  cliente_nombre: string;
+  cliente_correo: string;
+  conductor_nombre: string | null;
+  zona_nombre: string;
+  fecha_ultimo_cambio?: Date;
+}
+
+export interface FiltroEnviosAdmin {
+  estado?: EstadoEnvio;
+  id_zona?: number;
+  texto?: string;
+  pagina: number;
+  tamano: number;
+}
+
+export interface ResumenConductor {
+  completados: number;
+  ingresos_total: number;
+  ingresos_mes: number;
+  calificacion_promedio: number | null;
+  total_calificaciones: number;
+}
+
 export interface ShipmentRepositoryPort {
   create(envio: Omit<Envio, 'id_envio'>): Promise<Envio>;
   findById(id_envio: number): Promise<Envio | null>;
@@ -25,5 +50,12 @@ export interface ShipmentRepositoryPort {
 
   // Calificación (RF10)
   findCalification(id_envio: number): Promise<number | null>;
-  saveCalification(id_envio: number, puntuacion: number): Promise<void>;
+  saveCalification(id_envio: number, puntuacion: number, comentario?: string | null): Promise<void>;
+
+  /** Cancela el envío (registra el estado y el motivo). Falla si ya está en un estado final. */
+  cancel(id_envio: number, motivo: string | null): Promise<void>;
+  /** Servicios terminados del conductor (Entregado), con calificación y comentario. */
+  findDriverHistory(id_conductor: number, limite: number): Promise<EnvioDetallado[]>;
+  driverSummary(id_conductor: number): Promise<ResumenConductor>;
+  searchAdmin(f: FiltroEnviosAdmin): Promise<{ items: EnvioAdmin[]; total: number }>;
 }

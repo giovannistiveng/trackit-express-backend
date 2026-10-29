@@ -5,4 +5,6 @@ export interface UserRepositoryPort {
   create(user: Omit<User, 'id'>): Promise<User>;
   findByEmail(correo: string): Promise<User | null>;
   findById(id: number): Promise<User | null>;
+  updateProfile(id: number, datos: { nombre: string; telefono: string | null }): Promise<User>;
+  updatePassword(id: number, passwordHash: string): Promise<void>;
 }

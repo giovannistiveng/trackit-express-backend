@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS Usuario (
     correo VARCHAR(180) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     id_rol INTEGER NOT NULL,
+    telefono VARCHAR(20),
+    fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_usuario_rol FOREIGN KEY (id_rol) REFERENCES Rol(id_rol)
 );
 
@@ -68,6 +70,13 @@ CREATE TABLE IF NOT EXISTS Envio (
     id_zona INTEGER NOT NULL,
     categoria VARCHAR(50) CHECK (categoria IS NULL OR categoria IN ('Moto Express', 'Motocarro', 'Camioneta')),
     fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    origen_lat DECIMAL(9,6),
+    origen_lon DECIMAL(9,6),
+    destino_lat DECIMAL(9,6),
+    destino_lon DECIMAL(9,6),
+    distancia_km DECIMAL(8,2),
+    notas VARCHAR(300),
+    motivo_cancelacion VARCHAR(255),
     CONSTRAINT fk_envio_cliente FOREIGN KEY (id_cliente) REFERENCES Usuario(id_usuario),
     CONSTRAINT fk_envio_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor),
     CONSTRAINT fk_envio_zona FOREIGN KEY (id_zona) REFERENCES Zona_Tarifa(id_zona)
@@ -76,9 +85,10 @@ CREATE TABLE IF NOT EXISTS Envio (
 -- Tabla: Historial_Estado
 CREATE TABLE IF NOT EXISTS Historial_Estado (
     id_historial SERIAL PRIMARY KEY,
-    estado VARCHAR(40) NOT NULL CHECK (estado IN ('Pendiente', 'Asignado', 'En Ruta', 'Entregado')),
+    estado VARCHAR(40) NOT NULL,
     fecha_cambio TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     id_envio INTEGER NOT NULL,
+    CONSTRAINT chk_historial_estado CHECK (estado IN ('Pendiente', 'Asignado', 'En Ruta', 'Entregado', 'Cancelado')),
     CONSTRAINT fk_historial_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio)
 );
 
@@ -95,6 +105,7 @@ CREATE TABLE IF NOT EXISTS Evidencia_Entrega (
 CREATE TABLE IF NOT EXISTS Calificacion (
     id_calificacion SERIAL PRIMARY KEY,
     puntuacion DECIMAL(3,2) NOT NULL CHECK (puntuacion >= 1 AND puntuacion <= 5),
+    comentario VARCHAR(300),
     id_envio INTEGER NOT NULL UNIQUE,
     CONSTRAINT fk_calificacion_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio)
 );
@@ -124,6 +135,32 @@ CREATE TABLE IF NOT EXISTS Auditoria (
     CONSTRAINT fk_auditoria_usuario FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario)
 );
 
+-- Tabla: Notificacion (avisos dentro de la aplicación)
+CREATE TABLE IF NOT EXISTS Notificacion (
+    id_notificacion SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL,
+    tipo VARCHAR(40) NOT NULL,
+    titulo VARCHAR(120) NOT NULL,
+    mensaje VARCHAR(300) NOT NULL,
+    id_envio INTEGER,
+    leida BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_notificacion_usuario FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario),
+    CONSTRAINT fk_notificacion_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio)
+);
+
+-- Tabla: Contacto (formulario del sitio público)
+CREATE TABLE IF NOT EXISTS Contacto (
+    id_contacto SERIAL PRIMARY KEY,
+    nombre VARCHAR(120) NOT NULL,
+    correo VARCHAR(180) NOT NULL,
+    telefono VARCHAR(20),
+    asunto VARCHAR(40) NOT NULL DEFAULT 'General',
+    mensaje VARCHAR(1000) NOT NULL,
+    atendido BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Índices para optimizar consultas frecuentes
 CREATE INDEX IF NOT EXISTS idx_usuario_correo ON Usuario(correo);
 CREATE INDEX IF NOT EXISTS idx_usuario_rol ON Usuario(id_rol);
@@ -140,3 +177,5 @@ CREATE INDEX IF NOT EXISTS idx_ubicacion_envio ON Ubicacion_Envio(id_envio, capt
 CREATE INDEX IF NOT EXISTS idx_auditoria_fecha ON Auditoria(fecha DESC);
 CREATE INDEX IF NOT EXISTS idx_auditoria_accion ON Auditoria(accion);
 CREATE INDEX IF NOT EXISTS idx_documento_conductor ON Documento_Conductor(id_conductor);
+CREATE INDEX IF NOT EXISTS idx_notificacion_usuario ON Notificacion(id_usuario, leida, fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_contacto_fecha ON Contacto(fecha DESC);

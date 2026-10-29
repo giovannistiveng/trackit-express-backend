@@ -1,7 +1,8 @@
 # TrackIt Express - Backend
 
 API REST de TrackIt Express: envíos y logística local en Fusagasugá y alrededores
-(cotización por zona, PIN de entrega, seguimiento, aprobación de conductores y auditoría).
+(cotización por zona, PIN de entrega, seguimiento en el mapa con tiempo estimado de llegada,
+cancelaciones, notificaciones, ganancias del conductor, aprobación de conductores y auditoría).
 
 ## Stack
 
@@ -53,6 +54,7 @@ Ver [.env.example](.env.example). Las principales:
 | `CORS_ORIGINS` | URL del frontend en producción |
 | `PUBLIC_URL` | URL pública del backend (enlaces a archivos en disco) |
 | `CLOUDINARY_*` | Si están vacías, los archivos se guardan en `UPLOADS_DIR` y se sirven en `/uploads` |
+| `NOMINATIM_CONTACT` | Correo que OpenStreetMap exige para consultar direcciones (no hace falta API key) |
 | `LOG_*` | Logs en `logs/` (ver abajo) |
 
 ## API
@@ -69,12 +71,16 @@ Inicia sesión en `POST /api/auth/login`, copia el token y pulsa **Authorize**.
 | `POST /api/envios/crear` | Cliente | CU-006 |
 | `GET /api/clientes/envios?estado=activos\|historial` | Cliente | E6-HU2 |
 | `GET /api/envios/:id` | Dueño, conductor asignado, admin | CU-008 (el PIN solo para el dueño) |
-| `POST /api/envios/:id/calificar` | Cliente dueño | CU-010 |
+| `POST /api/envios/:id/calificar` | Cliente dueño | CU-010 (1 a 5 estrellas y comentario opcional) |
+| `POST /api/envios/:id/cancelar` | Cliente dueño (Pendiente) o admin (con motivo) | Cancelación con aviso a la otra parte |
+| `GET /api/envios/:id/seguimiento` | Dueño, conductor asignado, admin | Mapa: recorrido, señal en vivo, distancia y ETA |
 | `GET /api/conductores/me` | Conductor | Perfil, aprobación y vehículo |
 | `POST /api/vehicles/register` | Conductor | CU-003 |
 | `POST /api/documentos/upload` | Conductor | CU-004 |
 | `GET /api/conductores/envios/disponibles` | Conductor aprobado | CU-007 |
 | `GET /api/conductores/envios/activo` | Conductor | Servicio en curso |
+| `GET /api/conductores/envios/historial` | Conductor | Servicios terminados con calificación y comentario |
+| `GET /api/conductores/me/resumen` | Conductor | Servicios, ganancias (80 % de la tarifa) y reputación |
 | `POST /api/envios/aceptar` | Conductor aprobado | CU-007 (un servicio activo a la vez) |
 | `POST /api/envios/:id/iniciar-ruta` | Conductor asignado | Asignado → En Ruta |
 | `POST/GET /api/envios/:id/ubicacion` | Conductor asignado / dueño | CU-008 |
@@ -84,10 +90,27 @@ Inicia sesión en `POST /api/auth/login`, copia el token y pulsa **Authorize**.
 | `POST /api/conductores/aprobar` | Administrador | CU-011 (motivo obligatorio al rechazar) |
 | `GET /api/admin/dashboard/metrics` | Administrador | E7-HU2 |
 | `GET /api/admin/auditoria` | Administrador | E7-HU2 |
+| `GET /api/admin/envios` | Administrador | Todos los envíos con filtros (estado, zona, texto) |
+| `PUT /api/admin/zonas/:id` | Administrador | Cambiar la tarifa base de una zona |
+| `GET /api/admin/contactos`, `POST /api/admin/contactos/:id/atender` | Administrador | Mensajes del sitio web |
+| `GET/PATCH /api/usuarios/me`, `POST /api/usuarios/me/password` | Autenticado | Perfil, teléfono y contraseña |
+| `GET /api/notificaciones`, `GET /api/notificaciones/no-leidas` | Autenticado | Avisos (envío aceptado, en camino, entregado, cancelado, aprobación, calificación) |
+| `POST /api/notificaciones/:id/leer`, `POST /api/notificaciones/leer-todas` | Autenticado | Marcar como leídas |
+| `GET /api/publico/estadisticas`, `GET /api/publico/zonas` | Público | Cifras y tarifas para el sitio web |
+| `POST /api/contacto` | Público | Formulario de contacto (5 por minuto por IP) |
 | `POST /api/logs/frontend` | Público | Logs del frontend |
 | `GET /health` | Público | Estado del servidor y la base de datos |
 
 Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Request-Id`.
+
+## Reglas de negocio principales
+
+- **Estados:** Pendiente → Asignado → En Ruta → Entregado. Cualquiera sin terminar puede pasar a **Cancelado**.
+- **Cancelación:** el cliente solo mientras está Pendiente; el administrador hasta En Ruta, con motivo obligatorio.
+- **Tarifa:** tarifa base de la zona + 1.000 COP por km. El conductor gana el 80 %; la plataforma, el 20 %.
+- **Un servicio activo por conductor** y solo envíos compatibles con su vehículo.
+- **PIN:** solo lo ve el cliente dueño; sin el PIN correcto y la foto no se valida la entrega.
+- **Seguimiento:** la señal está "en vivo" si la última posición tiene menos de 2 minutos. El ETA usa 30 km/h y un factor de 1,3 por las curvas de la vía.
 
 ## Base de datos
 

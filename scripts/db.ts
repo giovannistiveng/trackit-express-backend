@@ -1,4 +1,11 @@
-
+/**
+ * Administración de la base de datos sin depender de psql (funciona igual en Windows, macOS y Linux).
+ *
+ *   npm run db:setup     Crea las tablas (schema.sql) y carga los datos iniciales (seed.sql)
+ *   npm run db:migrate   Aplica las migraciones pendientes de database/migrations (en orden)
+ *
+ * Usa la misma configuración que el servidor (.env: DATABASE_URL o DB_HOST, DB_USER, …).
+ */
 import { readdirSync, readFileSync } from 'fs';
 import path from 'path';
 import { pool } from '../src/config/database';

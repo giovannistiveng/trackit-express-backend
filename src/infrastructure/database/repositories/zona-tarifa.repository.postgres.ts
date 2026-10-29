@@ -21,6 +21,14 @@ export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
     return result.rows.map((r) => this.mapRow(r));
   }
 
+  async updateTarifa(id_zona: number, tarifa_base: number): Promise<ZonaTarifa | null> {
+    const result = await this.pool.query<ZonaRow>('UPDATE Zona_Tarifa SET tarifa_base = $1 WHERE id_zona = $2 RETURNING *', [
+      tarifa_base,
+      id_zona,
+    ]);
+    return result.rows[0] ? this.mapRow(result.rows[0]) : null;
+  }
+
   private mapRow(row: ZonaRow): ZonaTarifa {
     return { id_zona: row.id_zona, nombre_zona: row.nombre_zona, tarifa_base: Number(row.tarifa_base) };
   }

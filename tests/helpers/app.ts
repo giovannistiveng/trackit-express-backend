@@ -13,9 +13,13 @@ import { DistancePort } from '../../src/domain/repositories/services.port';
 
 export const DIR_UPLOADS = path.join(os.tmpdir(), 'trackit-test-uploads');
 
+/** Coordenadas reales de Fusagasugá (origen) y Silvania (destino). */
+export const FUSA = { lat: 4.3369, lon: -74.3638 };
+export const SILVANIA = { lat: 4.4033, lon: -74.3878 };
+
 /** Distancia fija: las pruebas no dependen de OpenStreetMap. */
 export const distanciaFija: DistancePort = {
-  calcularDistancia: async () => ({ distancia_km: 34.5, duracion_segundos: 4140 }),
+  calcularDistancia: async () => ({ distancia_km: 34.5, duracion_segundos: 4140, origen: FUSA, destino: SILVANIA, exacta: true }),
 };
 
 /** ¿Hay una base de datos de pruebas disponible? */

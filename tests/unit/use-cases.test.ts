@@ -19,7 +19,7 @@ import {
 } from '../../src/application/use-cases/drivers/driver.use-cases';
 import { SearchAuditUseCase } from '../../src/application/use-cases/admin/admin.use-cases';
 import { ForbiddenError, UnauthorizedError, ValidationError } from '../../src/shared/errors';
-import { ADMIN, CLIENTE, CONDUCTOR, FakeAuditRepo, FakeDrivers, FakeShipments, FakeVehicles, auditFalso, conductorAprobado, envio } from '../helpers/fakes';
+import { ADMIN, CLIENTE, CONDUCTOR, FakeAuditRepo, FakeDrivers, FakeShipments, FakeVehicles, auditFalso, conductorAprobado, envio, notificacionesFalsas } from '../helpers/fakes';
 
 const storage = { upload: jest.fn(async () => 'https://cdn/x.jpg') };
 const JPG = { buffer: Buffer.from('x'), mimetype: 'image/jpeg', originalname: 'f.jpg' };
@@ -50,7 +50,7 @@ describe('catálogo', () => {
   });
   it('lista zonas', async () => {
     const z = [{ id_zona: 1, nombre_zona: 'A', tarifa_base: 1 }];
-    expect(await new ListZonesUseCase({ findAll: async () => z, findById: async () => null }).execute()).toBe(z);
+    expect(await new ListZonesUseCase({ findAll: async () => z, findById: async () => null, updateTarifa: async () => null }).execute()).toBe(z);
   });
   it('genera PIN de 4 dígitos', () => {
     expect(generarPin(() => 0)).toBe('1000');
@@ -60,7 +60,7 @@ describe('catálogo', () => {
 
 describe('LoginUserUseCase', () => {
   it('rechaza correo o contraseña vacíos sin consultar', async () => {
-    const users = { findByEmail: jest.fn(), create: jest.fn(), findById: jest.fn() };
+    const users = { findByEmail: jest.fn(), create: jest.fn(), findById: jest.fn(), updateProfile: jest.fn(), updatePassword: jest.fn() };
     const uc = new LoginUserUseCase(users, { hash: jest.fn(), compare: jest.fn() }, { sign: jest.fn(), verify: jest.fn() }, auditFalso().audit);
     await expect(uc.execute({ correo: '', password: 'x' })).rejects.toBeInstanceOf(UnauthorizedError);
     await expect(uc.execute({ correo: 5, password: 5 })).rejects.toBeInstanceOf(UnauthorizedError);
@@ -146,21 +146,21 @@ describe('casos de uso del conductor', () => {
   it('la evidencia exige archivo, tipo de imagen y En Ruta', async () => {
     const uc = new UploadEvidenceUseCase(s, d, storage);
     await expect(uc.execute(CONDUCTOR, 1)).rejects.toThrow('No se proporcionó ningún archivo');
-    await expect(uc.execute(CONDUCTOR, 1, { ...JPG, mimetype: 'image/gif' })).rejects.toThrow('La foto debe ser JPG o PNG');
+    await expect(uc.execute(CONDUCTOR, 1, { ...JPG, mimetype: 'image/gif' })).rejects.toThrow('La foto debe ser JPG, PNG o WebP');
     expect(await uc.execute(CONDUCTOR, 1, JPG)).toEqual({ url_foto: 'https://cdn/x.jpg' });
     s.envios.set(1, envio({ estado: 'Asignado', id_conductor: 5 }));
     await expect(uc.execute(CONDUCTOR, 1, JPG)).rejects.toThrow('Inicia la ruta antes de registrar la evidencia');
   });
 
   it('la entrega exige PIN', async () => {
-    const uc = new ValidateDeliveryUseCase(s, d, auditFalso().audit);
+    const uc = new ValidateDeliveryUseCase(s, d, auditFalso().audit, notificacionesFalsas().servicio);
     await expect(uc.execute(CONDUCTOR, 1, { url_foto: 'https://x/y.jpg', pin_seguridad: '' })).rejects.toThrow('El PIN de seguridad es obligatorio');
     expect((await uc.execute(CONDUCTOR, 1, { url_foto: 'https://x/y.jpg', pin_seguridad: 1234 })).estado).toBe('Entregado');
   });
 
   it('la ubicación valida la fecha y el estado del servicio', async () => {
     const guardar = jest.fn();
-    const uc = new RecordLocationUseCase(s, d, { save: guardar, findLast: jest.fn() });
+    const uc = new RecordLocationUseCase(s, d, { save: guardar, findLast: jest.fn(), findTrail: jest.fn() });
     await expect(uc.execute(CONDUCTOR, 1, { lat: 1, lon: 1, capturado_en: 'ayer' })).rejects.toThrow('La fecha de captura no es válida');
     await uc.execute(CONDUCTOR, 1, { lat: '4.3', lon: '-74.3' });
     expect(guardar).toHaveBeenCalledWith(expect.objectContaining({ lat: 4.3, lon: -74.3, capturado_en: expect.any(Date) }));
@@ -169,7 +169,7 @@ describe('casos de uso del conductor', () => {
   });
 
   it('el conductor asignado puede leer la última ubicación; otro no', async () => {
-    const uc = new GetLastLocationUseCase(s, d, { save: jest.fn(), findLast: async () => ({ id_envio: 1, lat: 1, lon: 2, capturado_en: new Date(0) }) });
+    const uc = new GetLastLocationUseCase(s, d, { save: jest.fn(), findTrail: jest.fn(), findLast: async () => ({ id_envio: 1, lat: 1, lon: 2, capturado_en: new Date(0) }) });
     expect(await uc.execute(CONDUCTOR, 1)).toEqual({ lat: 1, lon: 2, capturado_en: new Date(0).toISOString() });
     await expect(uc.execute({ ...CONDUCTOR, userId: 777 }, 1)).rejects.toBeInstanceOf(ForbiddenError);
   });
@@ -191,7 +191,7 @@ describe('casos de uso del conductor', () => {
 
 describe('administración', () => {
   it('decidir aprobación valida el id y el booleano', async () => {
-    const uc = new DecideDriverApprovalUseCase(new FakeDrivers(), auditFalso().audit);
+    const uc = new DecideDriverApprovalUseCase(new FakeDrivers(), auditFalso().audit, notificacionesFalsas().servicio);
     await expect(uc.execute(ADMIN, { driverId: 'x', approved: true })).rejects.toThrow('driverId');
     await expect(uc.execute(ADMIN, { driverId: 1, approved: 'si' })).rejects.toThrow('"approved"');
     await expect(uc.execute(CLIENTE, { driverId: 1, approved: true })).rejects.toBeInstanceOf(ForbiddenError);

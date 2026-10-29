@@ -10,7 +10,7 @@ export function subirArchivo(tipos: string[]) {
     limits: { fileSize: MAX_ARCHIVO_BYTES, files: 1 },
     fileFilter: (_req, file, cb) => {
       if (tipos.includes(file.mimetype)) cb(null, true);
-      else cb(new ValidationError(tipos.includes('application/pdf') ? 'Solo se permiten imágenes o PDF' : 'La foto debe ser JPG o PNG'));
+      else cb(new ValidationError(tipos.includes('application/pdf') ? 'Solo se permiten imágenes o PDF' : 'La foto debe ser JPG, PNG o WebP'));
     },
   }).single('archivo');
 }

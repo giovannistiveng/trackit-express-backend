@@ -27,6 +27,10 @@ export interface QuoteResponse {
   tarifa_base: number;
   tarifa_total: number;
   moneda: 'COP';
+  /** Tiempo estimado del trayecto origen → destino, en minutos. */
+  duracion_estimada_min: number;
+  /** false si alguna dirección no se encontró y la distancia es aproximada. */
+  distancia_exacta: boolean;
 }
 
 /** Valida origen, destino y zona; lanza 400/404 si algo no cuadra. */
@@ -64,12 +68,14 @@ export class QuoteShipmentUseCase {
 
   async execute(input: QuoteInput): Promise<QuoteResponse> {
     const { origen, destino, zona } = await validarRuta(this.zonas, input);
-    const { distancia_km } = await this.distancia.calcularDistancia(origen, destino);
+    const ruta = await this.distancia.calcularDistancia(origen, destino);
     return {
-      distancia_km: Math.round(distancia_km * 100) / 100,
+      distancia_km: Math.round(ruta.distancia_km * 100) / 100,
       tarifa_base: zona.tarifa_base,
-      tarifa_total: calcularTarifa(zona.tarifa_base, distancia_km),
+      tarifa_total: calcularTarifa(zona.tarifa_base, ruta.distancia_km),
       moneda: 'COP',
+      duracion_estimada_min: Math.max(1, Math.round(ruta.duracion_segundos / 60)),
+      distancia_exacta: ruta.exacta !== false,
     };
   }
 }

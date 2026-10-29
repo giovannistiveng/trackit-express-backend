@@ -45,7 +45,7 @@ describe('Sistema y documentación', () => {
     const spec = await request(app).get('/api/docs.json');
     expect(spec.body.openapi).toBe('3.0.3');
     expect(Object.keys(spec.body.paths)).toEqual(
-      expect.arrayContaining(['/api/conductores/me', '/api/zonas', '/api/clientes/envios', '/api/admin/auditoria', '/api/envios/{id}/iniciar-ruta']),
+      expect.arrayContaining(['/api/conductores/me', '/api/zonas', '/api/clientes/envios', '/api/admin/auditoria', '/api/envios/{id}/iniciar-ruta', '/api/envios/{id}/seguimiento', '/api/envios/{id}/cancelar', '/api/notificaciones', '/api/usuarios/me', '/api/publico/estadisticas', '/api/admin/envios']),
     );
   });
 
@@ -223,7 +223,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     expect(evid.status).toBe(201);
     expect(evid.body.url_foto).toMatch(/\/uploads\/trackit\/evidencias\//);
     const pdf = await request(app).post(`/api/envios/${envio.id_envio}/evidencia`).set(auth(conductor.token)).attach('archivo', Buffer.from('x'), { filename: 'a.pdf', contentType: 'application/pdf' });
-    expect(pdf.body.error).toBe('La foto debe ser JPG o PNG');
+    expect(pdf.body.error).toBe('La foto debe ser JPG, PNG o WebP');
     const pinMalo = await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: evid.body.url_foto, pin_seguridad: '0000' });
     expect(pinMalo.body.error).toBe(envio.pin_seguridad === '0000' ? expect.any(String) : 'PIN incorrecto');
     expect((await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: 'no-url', pin_seguridad: '1' })).body.error).toBe(
@@ -258,7 +258,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     const met = await request(app).get('/api/admin/dashboard/metrics').set(auth(admin.token));
     expect(met.body).toMatchObject({ enviosTotales: 2, entregados: 1, enviosActivos: 1, ingresosCop: 39500, calificacionPromedio: 4, conductoresAprobados: 1 });
     expect(met.body.porZona).toHaveLength(5);
-    expect(met.body.porEstado.map((e: { estado: string }) => e.estado)).toEqual(['Pendiente', 'Asignado', 'En Ruta', 'Entregado']);
+    expect(met.body.porEstado.map((e: { estado: string }) => e.estado)).toEqual(['Pendiente', 'Asignado', 'En Ruta', 'Entregado', 'Cancelado']);
     const aud = await request(app).get('/api/admin/auditoria?tamano=5').set(auth(admin.token));
     expect(aud.body.total).toBeGreaterThan(10);
     expect(aud.body.items).toHaveLength(5);

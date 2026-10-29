@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { MetricasAdmin } from '../../../domain/entities/metricas.entity';
+import { EstadisticasPublicas, MetricasAdmin } from '../../../domain/entities/metricas.entity';
 import { MetricsRepositoryPort } from '../../../domain/repositories/metrics.repository.port';
 
 const ESTADO_ACTUAL = `
@@ -15,10 +15,11 @@ export class MetricsRepositoryPostgres implements MetricsRepositoryPort {
 
   async dashboard(): Promise<MetricasAdmin> {
     const [resumen, conductores, calificacion, porZona, porEstado] = await Promise.all([
-      this.pool.query<{ total: string; activos: string; entregados: string; ingresos: string | null }>(
+      this.pool.query<{ total: string; activos: string; entregados: string; cancelados: string; ingresos: string | null }>(
         `SELECT COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE estado <> 'Entregado') AS activos,
+                COUNT(*) FILTER (WHERE estado NOT IN ('Entregado', 'Cancelado')) AS activos,
                 COUNT(*) FILTER (WHERE estado = 'Entregado') AS entregados,
+                COUNT(*) FILTER (WHERE estado = 'Cancelado') AS cancelados,
                 SUM(tarifa) FILTER (WHERE estado = 'Entregado') AS ingresos
          FROM (${ESTADO_ACTUAL}) t`,
       ),
@@ -35,7 +36,7 @@ export class MetricsRepositoryPostgres implements MetricsRepositoryPort {
       ),
       this.pool.query<{ estado: string; envios: string }>(
         `SELECT estados.estado, COUNT(t.id_envio) AS envios
-         FROM (VALUES ('Pendiente', 1), ('Asignado', 2), ('En Ruta', 3), ('Entregado', 4)) AS estados(estado, orden)
+         FROM (VALUES ('Pendiente', 1), ('Asignado', 2), ('En Ruta', 3), ('Entregado', 4), ('Cancelado', 5)) AS estados(estado, orden)
          LEFT JOIN (${ESTADO_ACTUAL}) t ON t.estado = estados.estado
          GROUP BY estados.estado, estados.orden ORDER BY estados.orden`,
       ),
@@ -46,12 +47,30 @@ export class MetricsRepositoryPostgres implements MetricsRepositoryPort {
       enviosTotales: Number(r.total),
       enviosActivos: Number(r.activos),
       entregados: Number(r.entregados),
+      cancelados: Number(r.cancelados),
       ingresosCop: Number(r.ingresos ?? 0),
       conductoresAprobados: Number(conductores.rows[0].aprobados),
       conductoresPendientes: Number(conductores.rows[0].pendientes),
       calificacionPromedio: prom === null ? 0 : Math.round(Number(prom) * 10) / 10,
       porZona: porZona.rows.map((z) => ({ zona: z.zona, envios: Number(z.envios) })),
       porEstado: porEstado.rows.map((e) => ({ estado: e.estado, envios: Number(e.envios) })),
+    };
+  }
+
+  async publicas(): Promise<EstadisticasPublicas> {
+    const r = await this.pool.query<{ entregados: string; conductores: string; zonas: string; promedio: string | null }>(
+      `SELECT
+         (SELECT COUNT(DISTINCT id_envio) FROM Historial_Estado WHERE estado = 'Entregado') AS entregados,
+         (SELECT COUNT(*) FROM Conductor WHERE estado_aprobacion = 'Aprobado') AS conductores,
+         (SELECT COUNT(*) FROM Zona_Tarifa) AS zonas,
+         (SELECT AVG(puntuacion) FROM Calificacion) AS promedio`,
+    );
+    const row = r.rows[0];
+    return {
+      enviosEntregados: Number(row.entregados),
+      conductoresActivos: Number(row.conductores),
+      zonasCubiertas: Number(row.zonas),
+      calificacionPromedio: row.promedio === null ? 0 : Math.round(Number(row.promedio) * 10) / 10,
     };
   }
 }

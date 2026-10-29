@@ -9,6 +9,8 @@ interface UsuarioRow {
   correo: string;
   password_hash: string;
   id_rol: number;
+  telefono?: string | null;
+  fecha_registro?: Date;
 }
 
 export class UserRepositoryPostgres implements UserRepositoryPort {
@@ -21,7 +23,7 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
       const result = await client.query<UsuarioRow>(
         `INSERT INTO Usuario (nombre, correo, password_hash, id_rol)
          VALUES ($1, $2, $3, $4)
-         RETURNING id_usuario, nombre, correo, password_hash, id_rol`,
+         RETURNING *`,
         [user.nombre, user.correo, user.password_hash, user.id_rol],
       );
       const row = result.rows[0];
@@ -49,7 +51,27 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
 
+  async updateProfile(id: number, datos: { nombre: string; telefono: string | null }): Promise<User> {
+    const result = await this.pool.query<UsuarioRow>(
+      'UPDATE Usuario SET nombre = $1, telefono = $2 WHERE id_usuario = $3 RETURNING *',
+      [datos.nombre, datos.telefono, id],
+    );
+    return this.mapRow(result.rows[0]);
+  }
+
+  async updatePassword(id: number, passwordHash: string): Promise<void> {
+    await this.pool.query('UPDATE Usuario SET password_hash = $1 WHERE id_usuario = $2', [passwordHash, id]);
+  }
+
   private mapRow(row: UsuarioRow): User {
-    return { id: row.id_usuario, nombre: row.nombre, correo: row.correo, password_hash: row.password_hash, id_rol: row.id_rol };
+    return {
+      id: row.id_usuario,
+      nombre: row.nombre,
+      correo: row.correo,
+      password_hash: row.password_hash,
+      id_rol: row.id_rol,
+      telefono: row.telefono ?? null,
+      fecha_registro: row.fecha_registro ? new Date(row.fecha_registro) : undefined,
+    };
   }
 }

@@ -3,7 +3,10 @@ import { Conductor } from '../../src/domain/entities/driver.entity';
 import { Envio, EnvioDetallado, EstadoEnvio } from '../../src/domain/entities/shipment.entity';
 import { Vehicle } from '../../src/domain/entities/vehicle.entity';
 import { DriverRepositoryPort, ConductorPostulante } from '../../src/domain/repositories/driver.repository.port';
-import { ShipmentRepositoryPort, HistorialEstadoRow } from '../../src/domain/repositories/shipment.repository.port';
+import { ShipmentRepositoryPort, HistorialEstadoRow, EnvioAdmin } from '../../src/domain/repositories/shipment.repository.port';
+import { NotificationRepositoryPort } from '../../src/domain/repositories/notification.repository.port';
+import { Notificacion } from '../../src/domain/entities/notificacion.entity';
+import { NotificationService } from '../../src/application/services/notification.service';
 import { VehicleRepositoryPort } from '../../src/domain/repositories/vehicle.repository.port';
 import { AuditRepositoryPort } from '../../src/domain/repositories/audit.repository.port';
 import { AuditService } from '../../src/application/services/audit.service';
@@ -53,6 +56,48 @@ export class FakeShipments implements ShipmentRepositoryPort {
   async saveCalification(id: number, p: number) {
     this.calificaciones.set(id, p);
   }
+  async cancel(id: number, motivo: string | null) {
+    const e = this.envios.get(id) as Envio;
+    if (e.estado === 'Entregado' || e.estado === 'Cancelado') throw new Error('estado final');
+    this.envios.set(id, { ...e, estado: 'Cancelado', motivo_cancelacion: motivo });
+  }
+  async findDriverHistory(id: number) {
+    return [...this.envios.values()].filter((e) => e.id_conductor === id && (e.estado === 'Entregado' || e.estado === 'Cancelado'));
+  }
+  async driverSummary() {
+    return { completados: 0, ingresos_total: 0, ingresos_mes: 0, calificacion_promedio: null, total_calificaciones: 0 };
+  }
+  async searchAdmin(): Promise<{ items: EnvioAdmin[]; total: number }> {
+    return { items: [], total: 0 };
+  }
+}
+
+export class FakeNotifications implements NotificationRepositoryPort {
+  avisos: Notificacion[] = [];
+  async save(n: Notificacion) {
+    this.avisos.push({ ...n, id: this.avisos.length + 1, leida: false, fecha: new Date() });
+  }
+  async findByUser(id: number, o: { soloNoLeidas: boolean; limite: number }) {
+    return this.avisos.filter((a) => a.id_usuario === id && (!o.soloNoLeidas || !a.leida)).slice(0, o.limite);
+  }
+  async countUnread(id: number) {
+    return this.avisos.filter((a) => a.id_usuario === id && !a.leida).length;
+  }
+  async markRead(idN: number, idU: number) {
+    const a = this.avisos.find((x) => x.id === idN && x.id_usuario === idU);
+    if (a) a.leida = true;
+    return !!a;
+  }
+  async markAllRead(idU: number) {
+    const pendientes = this.avisos.filter((x) => x.id_usuario === idU && !x.leida);
+    pendientes.forEach((a) => (a.leida = true));
+    return pendientes.length;
+  }
+}
+
+export function notificacionesFalsas() {
+  const repo = new FakeNotifications();
+  return { repo, servicio: new NotificationService(repo) };
 }
 
 export class FakeDrivers implements DriverRepositoryPort {

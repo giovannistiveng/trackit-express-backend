@@ -5,7 +5,9 @@ import { AuditService } from '../application/services/audit.service';
 import { LoginUserUseCase } from '../application/use-cases/auth/login-user.use-case';
 import { RegisterUserUseCase } from '../application/use-cases/auth/register-user.use-case';
 import { ListZonesUseCase, QuoteShipmentUseCase } from '../application/use-cases/catalog/catalog.use-cases';
+import { NotificationService } from '../application/services/notification.service';
 import {
+  CancelShipmentUseCase,
   CreateShipmentUseCase,
   ListClientShipmentsUseCase,
   RateShipmentUseCase,
@@ -15,6 +17,7 @@ import {
   AcceptShipmentUseCase,
   GetActiveServiceUseCase,
   GetLastLocationUseCase,
+  GetTrackingUseCase,
   ListAvailableShipmentsUseCase,
   RecordLocationUseCase,
   StartRouteUseCase,
@@ -24,11 +27,30 @@ import {
 import {
   DecideDriverApprovalUseCase,
   GetDriverProfileUseCase,
+  GetDriverSummaryUseCase,
   ListDriverApplicantsUseCase,
+  ListDriverHistoryUseCase,
   RegisterVehicleUseCase,
   UploadDriverDocumentUseCase,
 } from '../application/use-cases/drivers/driver.use-cases';
-import { GetDashboardMetricsUseCase, SearchAuditUseCase } from '../application/use-cases/admin/admin.use-cases';
+import {
+  GetDashboardMetricsUseCase,
+  ListContactsUseCase,
+  ResolveContactUseCase,
+  SearchAuditUseCase,
+  SearchShipmentsAdminUseCase,
+  UpdateZoneTariffUseCase,
+} from '../application/use-cases/admin/admin.use-cases';
+import { ChangePasswordUseCase, GetMyProfileUseCase, UpdateMyProfileUseCase } from '../application/use-cases/users/user.use-cases';
+import {
+  CountUnreadNotificationsUseCase,
+  ListNotificationsUseCase,
+  MarkAllNotificationsReadUseCase,
+  MarkNotificationReadUseCase,
+} from '../application/use-cases/notifications/notification.use-cases';
+import { GetPublicStatsUseCase, ListPublicZonesUseCase, SubmitContactUseCase } from '../application/use-cases/public/public.use-cases';
+import { ContactRepositoryPostgres } from './database/repositories/contact.repository.postgres';
+import { NotificationRepositoryPostgres } from './database/repositories/notification.repository.postgres';
 import { DistancePort, PasswordHasherPort, TokenServicePort } from '../domain/repositories/services.port';
 import { StoragePort } from '../domain/repositories/storage.port';
 import { AuditRepositoryPostgres } from './database/repositories/audit.repository.postgres';
@@ -73,6 +95,10 @@ export function crearContenedor(d: Dependencias) {
   const documentos = new DocumentoConductorRepositoryPostgres(d.pool);
   const ubicaciones = new LocationRepositoryPostgres(d.pool);
   const audit = new AuditService(new AuditRepositoryPostgres(d.pool), (e) => d.log.child('Auditoria').warn('No se pudo registrar la auditoría', e));
+  const notificacionesRepo = new NotificationRepositoryPostgres(d.pool);
+  const notificaciones = new NotificationService(notificacionesRepo, (e) => d.log.child('Notificaciones').warn('No se pudo crear la notificación', e));
+  const metricas = new MetricsRepositoryPostgres(d.pool);
+  const contactos = new ContactRepositoryPostgres(d.pool);
 
   return {
     tokens,
@@ -89,26 +115,50 @@ export function crearContenedor(d: Dependencias) {
       crear: new CreateShipmentUseCase(envios, zonas, distancia, audit),
       delCliente: new ListClientShipmentsUseCase(envios),
       rastrear: new TrackShipmentUseCase(envios, drivers, vehiculos),
-      calificar: new RateShipmentUseCase(envios, audit),
+      calificar: new RateShipmentUseCase(envios, drivers, audit, notificaciones),
+      cancelar: new CancelShipmentUseCase(envios, drivers, audit, notificaciones),
       disponibles: new ListAvailableShipmentsUseCase(envios, drivers, vehiculos),
       activo: new GetActiveServiceUseCase(envios, drivers),
-      aceptar: new AcceptShipmentUseCase(envios, drivers, vehiculos, audit),
-      iniciarRuta: new StartRouteUseCase(envios, drivers, audit),
+      aceptar: new AcceptShipmentUseCase(envios, drivers, vehiculos, audit, notificaciones),
+      iniciarRuta: new StartRouteUseCase(envios, drivers, audit, notificaciones),
       evidencia: new UploadEvidenceUseCase(envios, drivers, storage),
-      validarEntrega: new ValidateDeliveryUseCase(envios, drivers, audit),
+      validarEntrega: new ValidateDeliveryUseCase(envios, drivers, audit, notificaciones),
       registrarUbicacion: new RecordLocationUseCase(envios, drivers, ubicaciones),
       ultimaUbicacion: new GetLastLocationUseCase(envios, drivers, ubicaciones),
+      seguimiento: new GetTrackingUseCase(envios, drivers, ubicaciones),
     },
     conductores: {
       perfil: new GetDriverProfileUseCase(drivers, vehiculos),
       registrarVehiculo: new RegisterVehicleUseCase(vehiculos, drivers, audit),
       subirDocumento: new UploadDriverDocumentUseCase(documentos, drivers, storage, audit),
       postulantes: new ListDriverApplicantsUseCase(drivers),
-      decidir: new DecideDriverApprovalUseCase(drivers, audit),
+      decidir: new DecideDriverApprovalUseCase(drivers, audit, notificaciones),
+      resumen: new GetDriverSummaryUseCase(drivers, envios),
+      historial: new ListDriverHistoryUseCase(drivers, envios),
+    },
+    usuarios: {
+      perfil: new GetMyProfileUseCase(users),
+      actualizar: new UpdateMyProfileUseCase(users, audit),
+      cambiarPassword: new ChangePasswordUseCase(users, hasher, audit),
+    },
+    notificaciones: {
+      listar: new ListNotificationsUseCase(notificacionesRepo),
+      noLeidas: new CountUnreadNotificationsUseCase(notificacionesRepo),
+      leer: new MarkNotificationReadUseCase(notificacionesRepo),
+      leerTodas: new MarkAllNotificationsReadUseCase(notificacionesRepo),
+    },
+    publico: {
+      estadisticas: new GetPublicStatsUseCase(metricas),
+      zonas: new ListPublicZonesUseCase(zonas),
+      contacto: new SubmitContactUseCase(contactos, audit),
     },
     admin: {
-      metricas: new GetDashboardMetricsUseCase(new MetricsRepositoryPostgres(d.pool)),
+      metricas: new GetDashboardMetricsUseCase(metricas),
       auditoria: new SearchAuditUseCase(new AuditRepositoryPostgres(d.pool)),
+      envios: new SearchShipmentsAdminUseCase(envios),
+      tarifa: new UpdateZoneTariffUseCase(zonas, audit),
+      contactos: new ListContactsUseCase(contactos),
+      atenderContacto: new ResolveContactUseCase(contactos, audit),
     },
   };
 }

@@ -7,6 +7,10 @@ import { ArchivoSubido, StoragePort } from '../../../domain/repositories/storage
 import { VehicleRepositoryPort } from '../../../domain/repositories/vehicle.repository.port';
 import { NotFoundError, ValidationError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
+import { NotificationService } from '../../services/notification.service';
+import { EnvioApi, presentarEnvio } from '../../services/envio.presenter';
+import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
+import { ESTADOS_ACTIVOS_CONDUCTOR } from '../../../domain/entities/shipment.entity';
 import { conductorDelActor, exigirMismoId, exigirRol } from '../../services/access';
 import { idValido } from '../../validation';
 
@@ -111,6 +115,7 @@ export class DecideDriverApprovalUseCase {
   constructor(
     private readonly drivers: DriverRepositoryPort,
     private readonly audit: AuditService,
+    private readonly notificaciones: NotificationService,
   ) {}
 
   async execute(actor: Actor, input: { driverId: unknown; approved: unknown; observation?: unknown }) {
@@ -134,6 +139,53 @@ export class DecideDriverApprovalUseCase {
       idEntidad: id,
       detalle: input.approved ? c.correo : `${c.correo}: ${motivo}`,
     });
+    await this.notificaciones.notificar(
+      input.approved
+        ? {
+            id_usuario: c.id_usuario,
+            tipo: 'conductor_aprobado',
+            titulo: '¡Tu cuenta fue aprobada!',
+            mensaje: 'Ya puedes tomar servicios desde el tablero. Bienvenido al equipo TrackIt Express.',
+          }
+        : {
+            id_usuario: c.id_usuario,
+            tipo: 'conductor_rechazado',
+            titulo: 'Revisa tus documentos',
+            mensaje: `Tu solicitud no fue aprobada: ${motivo}. Sube los documentos corregidos para volver a revisión.`,
+          },
+    );
     return { id_conductor: c.id_conductor, nombre: c.nombre, correo: c.correo, estado_aprobacion: estado, motivo_rechazo: input.approved ? null : motivo };
+  }
+}
+
+/** Resumen del conductor: servicios completados, ganancias y reputación. */
+export class GetDriverSummaryUseCase {
+  constructor(
+    private readonly drivers: DriverRepositoryPort,
+    private readonly envios: ShipmentRepositoryPort,
+  ) {}
+
+  async execute(actor: Actor) {
+    const c = await conductorDelActor(this.drivers, actor);
+    const [resumen, activos] = await Promise.all([
+      this.envios.driverSummary(c.id_conductor),
+      this.envios.findByDriver(c.id_conductor, ESTADOS_ACTIVOS_CONDUCTOR),
+    ]);
+    return { ...resumen, servicio_activo: activos[0]?.id_envio ?? null };
+  }
+}
+
+/** Servicios terminados del conductor (entregados o cancelados), del más reciente al más antiguo. */
+export class ListDriverHistoryUseCase {
+  constructor(
+    private readonly drivers: DriverRepositoryPort,
+    private readonly envios: ShipmentRepositoryPort,
+  ) {}
+
+  async execute(actor: Actor, limiteCrudo?: unknown): Promise<EnvioApi[]> {
+    const c = await conductorDelActor(this.drivers, actor);
+    const limite = Math.min(200, Math.max(1, Number.parseInt(String(limiteCrudo ?? '50'), 10) || 50));
+    const lista = await this.envios.findDriverHistory(c.id_conductor, limite);
+    return lista.map((e) => presentarEnvio(e, { incluirPin: false, vistaConductor: true }));
   }
 }

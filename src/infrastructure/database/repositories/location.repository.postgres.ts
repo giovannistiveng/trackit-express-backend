@@ -22,4 +22,15 @@ export class LocationRepositoryPostgres implements LocationRepositoryPort {
     const row = r.rows[0];
     return row ? { id_envio, lat: Number(row.latitud), lon: Number(row.longitud), capturado_en: new Date(row.capturado_en) } : null;
   }
+
+  async findTrail(id_envio: number, limite: number): Promise<Ubicacion[]> {
+    const r = await this.pool.query<{ latitud: string; longitud: string; capturado_en: Date }>(
+      `SELECT latitud, longitud, capturado_en FROM (
+         SELECT latitud, longitud, capturado_en, id_ubicacion FROM Ubicacion_Envio
+         WHERE id_envio = $1 ORDER BY capturado_en DESC, id_ubicacion DESC LIMIT $2
+       ) t ORDER BY capturado_en, id_ubicacion`,
+      [id_envio, limite],
+    );
+    return r.rows.map((row) => ({ id_envio, lat: Number(row.latitud), lon: Number(row.longitud), capturado_en: new Date(row.capturado_en) }));
+  }
 }

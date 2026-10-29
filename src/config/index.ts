@@ -27,6 +27,8 @@ export const config = {
   /** Orígenes permitidos por CORS, separados por coma. Vacío = cualquiera (solo desarrollo). */
   corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean),
   uploadsDir: process.env.UPLOADS_DIR || 'uploads',
+  /** Contacto que se envía a Nominatim (OpenStreetMap) en el User-Agent, como exige su política de uso. */
+  nominatimContacto: process.env.NOMINATIM_CONTACT || 'soporte@trackit.com.co',
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
     apiKey: process.env.CLOUDINARY_API_KEY || '',

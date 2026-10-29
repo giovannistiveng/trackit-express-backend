@@ -1,4 +1,5 @@
-import { DistancePort } from '../../domain/repositories/services.port';
+import { config } from '../../config';
+import { DistancePort, ResultadoDistancia } from '../../domain/repositories/services.port';
 import { logger } from '../../shared/logger';
 
 const log = logger.child('OpenStreetMap');
@@ -11,11 +12,12 @@ export interface Coordenadas {
 export class OpenStreetAdapter implements DistancePort {
   private userAgent: string;
 
-  constructor() {
-    this.userAgent = 'TrackIt-Express/1.0 (giovannistiven.g@gmail.com)';
+  /** Nominatim exige identificar la aplicación con un contacto (NOMINATIM_CONTACT en .env). */
+  constructor(contacto: string = config.nominatimContacto) {
+    this.userAgent = `TrackIt-Express/2.0 (${contacto})`;
   }
 
-  async calcularDistancia(origen: string, destino: string): Promise<{ distancia_km: number; duracion_segundos: number }> {
+  async calcularDistancia(origen: string, destino: string): Promise<ResultadoDistancia> {
     // Intentar obtener coordenadas reales de OpenStreetMap
     let coordsOrigen: Coordenadas | null = null;
     let coordsDestino: Coordenadas | null = null;
@@ -43,6 +45,9 @@ export class OpenStreetAdapter implements DistancePort {
       return {
         distancia_km: Math.round(distanciaKm * 100) / 100,
         duracion_segundos: Math.round(duracionSegundos),
+        origen: coordsOrigen,
+        destino: coordsDestino,
+        exacta: true,
       };
     }
 
@@ -57,6 +62,9 @@ export class OpenStreetAdapter implements DistancePort {
     return {
       distancia_km: distanciaSimulada,
       duracion_segundos: duracionSegundos,
+      origen: coordsOrigen,
+      destino: coordsDestino,
+      exacta: false,
     };
   }
 
