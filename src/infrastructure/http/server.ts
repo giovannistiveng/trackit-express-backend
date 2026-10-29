@@ -24,6 +24,10 @@ import { OpenStreetAdapter } from '../external/open-street.adapter';
 import { QuoteShipmentUseCase } from '../../application/use-cases/shipments/quote-shipment.use-case';
 import { QuoteController } from './controllers/quote.controller';
 import { createQuoteRoutes } from './routes/quote.routes';
+import { ShipmentRepositoryPostgres } from '../database/repositories/shipment.repository.postgres';
+import { CreateShipmentUseCase } from '../../application/use-cases/shipments/create-shipment.use-case';
+import { ShipmentController } from './controllers/shipment.controller';
+import { createShipmentRoutes } from './routes/shipment.routes';
 
 const app = express();
 
@@ -56,6 +60,11 @@ const openStreetAdapter = new OpenStreetAdapter();
 const quoteShipmentUseCase = new QuoteShipmentUseCase(zonaRepository, openStreetAdapter);
 const quoteController = new QuoteController(quoteShipmentUseCase);
 
+// --- Inyección de dependencias (módulo Envíos) ---
+const shipmentRepository = new ShipmentRepositoryPostgres(pool);
+const createShipmentUseCase = new CreateShipmentUseCase(shipmentRepository, zonaRepository, openStreetAdapter);
+const shipmentController = new ShipmentController(createShipmentUseCase);
+
 // Rutas
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
@@ -65,6 +74,7 @@ app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/vehicles', createVehicleRoutes(vehicleController));
 app.use('/api/documentos', createDocumentoConductorRoutes(documentoConductorController));
 app.use('/api/cotizar', createQuoteRoutes(quoteController));
+app.use('/api/envios', createShipmentRoutes(shipmentController));
 
 // Middleware de manejo de errores
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -89,6 +99,7 @@ async function start() {
       console.log(`   POST http://localhost:${config.port}/api/vehicles/register`);
       console.log(`   POST http://localhost:${config.port}/api/documentos/upload`);
       console.log(`   POST http://localhost:${config.port}/api/cotizar/cotizar`);
+      console.log(`   POST http://localhost:${config.port}/api/envios/crear`);
     });
   } catch (error) {
     console.error('❌ Error iniciando el servidor:', error);
