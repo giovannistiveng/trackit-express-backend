@@ -19,8 +19,8 @@ export const config = {
   bcrypt: {
     saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '10', 10),
   },
-  googleMaps: {
-    apiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+  openStreet: {
+    apiKey: process.env.OPENSTREET_API_KEY || '',
   },
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',

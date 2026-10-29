@@ -19,6 +19,11 @@ import { CloudinaryAdapter } from '../external/cloudinary.adapter';
 import { UploadDriverDocumentUseCase } from '../../application/use-cases/drivers/upload-driver-document.use-case';
 import { DocumentoConductorController } from './controllers/documento-conductor.controller';
 import { createDocumentoConductorRoutes } from './routes/documento-conductor.routes';
+import { ZonaTarifaRepositoryPostgres } from '../database/repositories/zona-tarifa.repository.postgres';
+import { OpenStreetAdapter } from '../external/open-street.adapter';
+import { QuoteShipmentUseCase } from '../../application/use-cases/shipments/quote-shipment.use-case';
+import { QuoteController } from './controllers/quote.controller';
+import { createQuoteRoutes } from './routes/quote.routes';
 
 const app = express();
 
@@ -45,6 +50,12 @@ const cloudinaryAdapter = new CloudinaryAdapter();
 const uploadDriverDocumentUseCase = new UploadDriverDocumentUseCase(documentoRepository, cloudinaryAdapter);
 const documentoConductorController = new DocumentoConductorController(uploadDriverDocumentUseCase);
 
+// --- Inyección de dependencias (módulo Cotización) ---
+const zonaRepository = new ZonaTarifaRepositoryPostgres(pool);
+const openStreetAdapter = new OpenStreetAdapter();
+const quoteShipmentUseCase = new QuoteShipmentUseCase(zonaRepository, openStreetAdapter);
+const quoteController = new QuoteController(quoteShipmentUseCase);
+
 // Rutas
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
@@ -53,6 +64,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', createAuthRoutes(authController));
 app.use('/api/vehicles', createVehicleRoutes(vehicleController));
 app.use('/api/documentos', createDocumentoConductorRoutes(documentoConductorController));
+app.use('/api/cotizar', createQuoteRoutes(quoteController));
 
 // Middleware de manejo de errores
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -76,6 +88,7 @@ async function start() {
       console.log(`   POST http://localhost:${config.port}/api/auth/login`);
       console.log(`   POST http://localhost:${config.port}/api/vehicles/register`);
       console.log(`   POST http://localhost:${config.port}/api/documentos/upload`);
+      console.log(`   POST http://localhost:${config.port}/api/cotizar/cotizar`);
     });
   } catch (error) {
     console.error('❌ Error iniciando el servidor:', error);
