@@ -42,8 +42,10 @@ CREATE TABLE IF NOT EXISTS Documento_Conductor (
     tipo_documento VARCHAR(50) NOT NULL CHECK (tipo_documento IN ('Cédula', 'SOAT', 'Licencia')),
     url_archivo VARCHAR(500) NOT NULL,
     id_conductor INTEGER NOT NULL,
+    fecha_subida TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_documento_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor)
 );
+
 
 -- Tabla: Zona_Tarifa
 CREATE TABLE IF NOT EXISTS Zona_Tarifa (
