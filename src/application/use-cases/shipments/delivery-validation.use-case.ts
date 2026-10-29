@@ -17,12 +17,9 @@ export class DeliveryValidationUseCase {
       throw new ValidationError('Este envío ya ha sido validado como entregado');
     }
 
-    // Generar PIN interno de 4 dígitos
-    const generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
-
-    // Validar que el PIN coincida (simulación - en caso real el usuario ingresaría el PIN)
-    if (dto.pin_seguridad !== generatedPin) {
-      throw new ValidationError(`PIN incorrecto. El PIN generado fue: ${generatedPin}`);
+    // Validar el PIN contra el almacenado en la base de datos
+    if (dto.pin_seguridad !== envio.pin_seguridad) {
+      throw new ValidationError(`PIN incorrecto. El PIN almacenado es: ${envio.pin_seguridad}`);
     }
 
     // Actualizar estado a "Entregado" y registrar en historial

@@ -34,6 +34,7 @@ import { createAcceptShipmentRoutes } from './routes/accept-shipment.routes';
 import { ShipmentTrackingUseCase } from '../../application/use-cases/shipments/shipment-tracking.use-case';
 import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
 import { createShipmentTrackingRoutes } from './routes/shipment-tracking.routes';
+import { DeliveryValidationUseCase } from '../../application/use-cases/shipments/delivery-validation.use-case';import { DeliveryValidationController } from './controllers/delivery-validation.controller';import { createDeliveryValidationRoutes } from './routes/delivery-validation.routes';
 
 const app = express();
 
@@ -80,6 +81,9 @@ const shipmentTrackingUseCase = new ShipmentTrackingUseCase(shipmentRepository);
 const shipmentTrackingController = new ShipmentTrackingController(shipmentTrackingUseCase);
 
 // Rutas
+// --- Inyección de dependencias (módulo Validación de Entrega - RF9) ---
+const deliveryValidationUseCase = new DeliveryValidationUseCase(shipmentRepository);
+const deliveryValidationController = new DeliveryValidationController(deliveryValidationUseCase);
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
 });
@@ -89,6 +93,7 @@ app.use('/api/vehicles', createVehicleRoutes(vehicleController));
 app.use('/api/documentos', createDocumentoConductorRoutes(documentoConductorController));
 app.use('/api/cotizar', createQuoteRoutes(quoteController));
 app.use('/api/envios', createShipmentRoutes(shipmentController));
+app.use('/api/envios', createDeliveryValidationRoutes(deliveryValidationController));
 app.use('/api/envios', createAcceptShipmentRoutes(acceptShipmentController));
 app.use('/api/envios', createShipmentTrackingRoutes(shipmentTrackingController));
 
