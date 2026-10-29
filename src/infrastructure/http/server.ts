@@ -1,72 +1,59 @@
-import express from 'express';
-import cors from 'cors';
 import { config } from '../../config';
-import { pool } from '../../config/database';
-import { AppError } from '../../shared/errors';
-import { HashService } from '../security/hash.service';
-import { JWTService } from '../security/jwt.service';
-import { UserRepositoryPostgres } from '../database/repositories/user.repository.postgres';
-import { RegisterUserUseCase } from '../../application/use-cases/auth/register-user.use-case';
-import { LoginUserUseCase } from '../../application/use-cases/auth/login-user.use-case';
-import { AuthController } from './controllers/auth.controller';
-import { createAuthRoutes } from './routes/auth.routes';
-import { VehicleRepositoryPostgres } from '../database/repositories/vehicle.repository.postgres';
-import { RegisterVehicleUseCase } from '../../application/use-cases/vehicles/register-vehicle.use-case';
-import { VehicleController } from './controllers/vehicle.controller';
-import { createVehicleRoutes } from './routes/vehicle.routes';
+import { pool, testConnection } from '../../config/database';
+import { frontendLogger, logger } from '../../shared/logger';
+import { crearContenedor } from '../container';
+import { crearApp } from './app';
 
-const app = express();
+const log = logger.child('Servidor');
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
+const SECRETO_POR_DEFECTO = 'default_secret_change_in_production';
 
-// --- Inyección de dependencias (módulo Auth) ---
-const hashService = new HashService();
-const jwtService = new JWTService();
-const userRepository = new UserRepositoryPostgres(pool);
-const registerUserUseCase = new RegisterUserUseCase(userRepository, hashService);
-const loginUserUseCase = new LoginUserUseCase(userRepository, hashService, jwtService);
-const authController = new AuthController(registerUserUseCase, loginUserUseCase);
-
-// --- Inyección de dependencias (módulo Vehículos) ---
-const vehicleRepository = new VehicleRepositoryPostgres(pool);
-const registerVehicleUseCase = new RegisterVehicleUseCase(vehicleRepository);
-const vehicleController = new VehicleController(registerVehicleUseCase);
-
-// Rutas
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
-});
-
-app.use('/api/auth', createAuthRoutes(authController));
-app.use('/api/vehicles', createVehicleRoutes(vehicleController));
-
-// Middleware de manejo de errores
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  if (err instanceof AppError) {
-    return res.status(err.statusCode).json({ error: err.message, statusCode: err.statusCode });
-  }
-  console.error(err);
-  return res.status(500).json({ error: 'Error interno del servidor' });
-});
-
-// Iniciar servidor
-async function start() {
-  try {
-    app.listen(config.port, () => {
-      console.log(`🚀 Servidor corriendo en http://localhost:${config.port}`);
-      console.log(`📋 Endpoints disponibles:`);
-      console.log(`   POST http://localhost:${config.port}/api/auth/register`);
-      console.log(`   POST http://localhost:${config.port}/api/auth/login`);
-      console.log(`   POST http://localhost:${config.port}/api/vehicles/register`);
-    });
-  } catch (error) {
-    console.error('❌ Error iniciando el servidor:', error);
+async function start(): Promise<void> {
+  if (config.nodeEnv === 'production' && (config.jwt.secret === SECRETO_POR_DEFECTO || config.jwt.secret.length < 32)) {
+    log.fatal('JWT_SECRET no está configurado o es demasiado corto (mínimo 32 caracteres) para producción');
     process.exit(1);
+  }
+
+  await testConnection();
+  const contenedor = crearContenedor({ pool, log });
+  const app = crearApp({
+    contenedor,
+    log,
+    salud: async () => {
+      await pool.query('SELECT 1');
+      return true;
+    },
+  });
+
+  const server = app.listen(config.port, () => {
+    log.info(`Servidor corriendo en http://localhost:${config.port} (entorno: ${config.nodeEnv})`);
+    log.info(`Documentación de la API en http://localhost:${config.port}/api/docs`);
+    log.info(`Archivos: ${contenedor.storageLocal ? `disco local (${config.uploadsDir})` : 'Cloudinary'} · Logs en ${logger.directory}`);
+  });
+
+  // Apagado ordenado: deja de aceptar peticiones, cierra la base de datos y vacía los logs
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      log.info(`Señal ${signal} recibida, apagando el servidor`);
+      server.close(async () => {
+        await pool.end().catch(() => undefined);
+        await Promise.all([logger.close(), frontendLogger.close()]);
+        process.exit(0);
+      });
+    });
   }
 }
 
-start();
+// Errores que escapan a Express: se registran antes de que el proceso caiga
+process.on('unhandledRejection', (reason) => {
+  log.error('Promesa rechazada sin manejar', reason);
+});
+process.on('uncaughtException', (err) => {
+  log.fatal('Excepción no capturada, el servidor se detiene', err);
+  process.exit(1);
+});
 
-export default app;
+start().catch((error) => {
+  log.fatal('Error iniciando el servidor', error);
+  process.exit(1);
+});

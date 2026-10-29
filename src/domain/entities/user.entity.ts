@@ -4,6 +4,6 @@ export interface User {
   correo: string;
   password_hash: string;
   id_rol: number;
-  created_at?: Date;
-  updated_at?: Date;
+  telefono?: string | null;
+  fecha_registro?: Date;
 }

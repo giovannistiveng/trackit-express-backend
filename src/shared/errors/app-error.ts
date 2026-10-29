@@ -28,3 +28,9 @@ export class UnauthorizedError extends AppError {
     super(message, 401);
   }
 }
+
+export class ForbiddenError extends AppError {
+  constructor(message: string = 'No tienes permiso para realizar esta acción') {
+    super(message, 403);
+  }
+}

@@ -1,12 +1,13 @@
 import bcrypt from 'bcryptjs';
 import { config } from '../../config';
+import { PasswordHasherPort } from '../../domain/repositories/services.port';
 
-export class HashService {
-  async hash(password: string): Promise<string> {
+export class HashService implements PasswordHasherPort {
+  hash(password: string): Promise<string> {
     return bcrypt.hash(password, config.bcrypt.saltRounds);
   }
 
-  async compare(password: string, hash: string): Promise<boolean> {
+  compare(password: string, hash: string): Promise<boolean> {
     return bcrypt.compare(password, hash);
   }
 }
