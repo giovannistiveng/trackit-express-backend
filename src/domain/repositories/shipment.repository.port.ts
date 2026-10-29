@@ -7,4 +7,5 @@ export interface ShipmentRepositoryPort {
   findByDriver(id_conductor: number): Promise<Envio[]>;
   findAvailable(): Promise<Envio[]>;
   updateStatus(id_envio: number, estado: string, id_conductor?: number): Promise<void>;
+  conductorExists(id_conductor: number): Promise<boolean>;
 }

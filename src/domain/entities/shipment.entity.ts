@@ -1,4 +1,6 @@
-export type TipoCarga = 'Documentos' => 'Mercancía General' => 'Carga Pesada' => 'Acarreo';
+export type TipoCarga = 'Documentos' | 'Mercancía General' | 'Carga Pesada' | 'Acarreo';
+
+export type EstadoEnvio = 'Pendiente' | 'Asignado' | 'En Ruta' | 'Entregado';
 
 export interface Envio {
   id_envio?: number;
@@ -10,5 +12,6 @@ export interface Envio {
   id_cliente: number;
   id_conductor?: number;
   id_zona: number;
-  created_at?: Date;
+  // Estado actual: se obtiene del último registro en Historial_Estado
+  estado?: EstadoEnvio;
 }

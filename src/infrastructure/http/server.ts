@@ -28,6 +28,9 @@ import { ShipmentRepositoryPostgres } from '../database/repositories/shipment.re
 import { CreateShipmentUseCase } from '../../application/use-cases/shipments/create-shipment.use-case';
 import { ShipmentController } from './controllers/shipment.controller';
 import { createShipmentRoutes } from './routes/shipment.routes';
+import { AcceptShipmentUseCase } from '../../application/use-cases/shipments/accept-shipment.use-case';
+import { AcceptShipmentController } from './controllers/accept-shipment.controller';
+import { createAcceptShipmentRoutes } from './routes/accept-shipment.routes';
 
 const app = express();
 
@@ -65,6 +68,10 @@ const shipmentRepository = new ShipmentRepositoryPostgres(pool);
 const createShipmentUseCase = new CreateShipmentUseCase(shipmentRepository, zonaRepository, openStreetAdapter);
 const shipmentController = new ShipmentController(createShipmentUseCase);
 
+// --- Inyección de dependencias (módulo Aceptación de Envíos - RF7) ---
+const acceptShipmentUseCase = new AcceptShipmentUseCase(shipmentRepository);
+const acceptShipmentController = new AcceptShipmentController(acceptShipmentUseCase);
+
 // Rutas
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
@@ -75,6 +82,7 @@ app.use('/api/vehicles', createVehicleRoutes(vehicleController));
 app.use('/api/documentos', createDocumentoConductorRoutes(documentoConductorController));
 app.use('/api/cotizar', createQuoteRoutes(quoteController));
 app.use('/api/envios', createShipmentRoutes(shipmentController));
+app.use('/api/envios', createAcceptShipmentRoutes(acceptShipmentController));
 
 // Middleware de manejo de errores
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -100,6 +108,7 @@ async function start() {
       console.log(`   POST http://localhost:${config.port}/api/documentos/upload`);
       console.log(`   POST http://localhost:${config.port}/api/cotizar/cotizar`);
       console.log(`   POST http://localhost:${config.port}/api/envios/crear`);
+      console.log(`   POST http://localhost:${config.port}/api/envios/aceptar`);
     });
   } catch (error) {
     console.error('❌ Error iniciando el servidor:', error);

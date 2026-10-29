@@ -1,4 +1,4 @@
-import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
+﻿import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
 import { CreateShipmentDTO, ShipmentResponse } from '../../dtos/shipment.dto';
 import { NotFoundError, ValidationError } from '../../../shared/errors';
 import { OpenStreetAdapter } from '../../../infrastructure/external/open-street.adapter';
@@ -21,18 +21,18 @@ export class CreateShipmentUseCase {
     // Calcular tarifa usando OpenStreetMap
     const { distancia_km } = await this.openStreet.calcularDistancia(dto.origen, dto.destino);
 
-    // Tarifa base de la zona + costo por kilómetro
+    // Tarifa base de la zona + costo por kilÃ³metro
     const costoPorKm = 1000;
-    const tarifa = zona.tarifa_base + (distancia_km * costoPorKm);
+    const tarifa = (zona as { tarifa_base: number }).tarifa_base + (distancia_km * costoPorKm);
 
-    // Generar PIN de seguridad de 4 dígitos
+    // Generar PIN de seguridad de 4 dÃ­gitos
     const pin_seguridad = Math.floor(1000 + Math.random() * 9000).toString();
 
     const envio = await this.shipmentRepository.create({
       origen: dto.origen,
       destino: dto.destino,
       tipo_carga: dto.tipo_carga,
-      tarifa: Math.round((zona.tarifa_base + distancia_km * costoPorKm) * 100) / 100,
+      tarifa: Math.round(((zona as { tarifa_base: number }).tarifa_base + distancia_km * costoPorKm) * 100) / 100,
       pin_seguridad,
       id_cliente: dto.id_cliente,
       id_zona: dto.id_zona,
