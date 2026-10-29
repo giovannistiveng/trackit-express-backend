@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { Envio } from '../../../domain/entities/shipment.entity';
-import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
+import { ShipmentRepositoryPort, HistorialEstadoRow } from '../../../domain/repositories/shipment.repository.port';
 import { ValidationError } from '../../../shared/errors';
 
 export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
@@ -121,6 +121,56 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
   async conductorExists(id_conductor: number): Promise<boolean> {
     const result = await this.pool.query('SELECT 1 FROM Conductor WHERE id_conductor = $1', [id_conductor]);
     return result.rows.length > 0;
+  }
+
+  async getStatusHistory(id_envio: number): Promise<HistorialEstadoRow[]> {
+    const result = await this.pool.query(
+      'SELECT estado, fecha_cambio FROM Historial_Estado WHERE id_envio = $1 ORDER BY fecha_cambio DESC, id_historial DESC',
+      [id_envio]
+    );
+    return result.rows.map((row) => ({ estado: row.estado, fecha_cambio: new Date(row.fecha_cambio) }));
+  }
+
+  async registerDelivery(id_envio: number, url_foto: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'INSERT INTO Evidencia_Entrega (url_foto, id_envio) VALUES ($1, $2)',
+        [url_foto, id_envio]
+      );
+      await client.query(
+        'INSERT INTO Historial_Estado (estado, id_envio) VALUES ($1, $2)',
+        ['Entregado', id_envio]
+      );
+      await client.query('COMMIT');
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      // 23505 = unique_violation (Evidencia_Entrega.id_envio es UNIQUE)
+      if (error?.code === '23505') {
+        throw new ValidationError('Este envío ya tiene una evidencia de entrega registrada');
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async findCalification(id_envio: number): Promise<number | null> {
+    const result = await this.pool.query('SELECT puntuacion FROM Calificacion WHERE id_envio = $1', [id_envio]);
+    if (result.rows.length === 0) return null;
+    return Number(result.rows[0].puntuacion);
+  }
+
+  async saveCalification(id_envio: number, puntuacion: number): Promise<void> {
+    try {
+      await this.pool.query('INSERT INTO Calificacion (puntuacion, id_envio) VALUES ($1, $2)', [puntuacion, id_envio]);
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        throw new ValidationError('Este envío ya fue calificado');
+      }
+      throw error;
+    }
   }
 
   private mapRow(row: any): Envio {

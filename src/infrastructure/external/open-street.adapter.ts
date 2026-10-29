@@ -74,9 +74,9 @@ export class OpenStreetAdapter {
         throw new Error(`Error en Nominatim: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as Array<{ lat: string; lon: string }>;
 
-      if (!data || data.length === 0) {
+      if (!Array.isArray(data) || data.length === 0) {
         return null;
       }
 

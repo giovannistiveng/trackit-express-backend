@@ -1,6 +1,7 @@
 import { ZonaTarifaRepositoryPort } from '../../../domain/repositories/zona-tarifa.repository.port';
 import { OpenStreetAdapter } from '../../../infrastructure/external/open-street.adapter';
-import { QuoteShipmentDTO, QuoteResponse } from '../../dtos/quote.dto';
+import { QuoteShipmentDTO } from '../../dtos/quote.dto';
+import { QuoteResponse } from '../../dtos/quote-response.dto';
 import { NotFoundError } from '../../../shared/errors';
 
 export class QuoteShipmentUseCase {

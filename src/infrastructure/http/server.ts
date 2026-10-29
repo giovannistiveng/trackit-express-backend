@@ -34,7 +34,16 @@ import { createAcceptShipmentRoutes } from './routes/accept-shipment.routes';
 import { ShipmentTrackingUseCase } from '../../application/use-cases/shipments/shipment-tracking.use-case';
 import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
 import { createShipmentTrackingRoutes } from './routes/shipment-tracking.routes';
-import { DeliveryValidationUseCase } from '../../application/use-cases/shipments/delivery-validation.use-case';import { DeliveryValidationController } from './controllers/delivery-validation.controller';import { createDeliveryValidationRoutes } from './routes/delivery-validation.routes';
+import { CalificationUseCase } from '../../application/use-cases/shipments/calification.use-case';
+import { CalificationController } from './controllers/calification.controller';
+import { DriverApprovalUseCase } from '../../application/use-cases/drivers/driver-approval.use-case';
+import { DriverApprovalController } from './controllers/driver-approval.controller';
+import { createDriverApprovalRoutes } from './routes/driver-approval.routes';
+import { createCalificationRoutes } from './routes/calification.routes';
+import { DriverRepositoryPostgres } from '../database/repositories/driver.repository.postgres';
+import { DeliveryValidationUseCase } from '../../application/use-cases/shipments/delivery-validation.use-case';
+import { DeliveryValidationController } from './controllers/delivery-validation.controller';
+import { createDeliveryValidationRoutes } from './routes/delivery-validation.routes';
 
 const app = express();
 
@@ -80,10 +89,20 @@ const acceptShipmentController = new AcceptShipmentController(acceptShipmentUseC
 const shipmentTrackingUseCase = new ShipmentTrackingUseCase(shipmentRepository);
 const shipmentTrackingController = new ShipmentTrackingController(shipmentTrackingUseCase);
 
-// Rutas
+// --- Inyección de dependencias (módulo Calificación - RF10) ---
+const calificationUseCase = new CalificationUseCase(shipmentRepository);
+const calificationController = new CalificationController(calificationUseCase);
+
+// --- Inyección de dependencias (módulo Aprobación de Conductores - RF11) ---
+const driverRepository = new DriverRepositoryPostgres(pool);
+const driverApprovalUseCase = new DriverApprovalUseCase(driverRepository);
+const driverApprovalController = new DriverApprovalController(driverApprovalUseCase);
+
 // --- Inyección de dependencias (módulo Validación de Entrega - RF9) ---
 const deliveryValidationUseCase = new DeliveryValidationUseCase(shipmentRepository);
 const deliveryValidationController = new DeliveryValidationController(deliveryValidationUseCase);
+
+// Rutas
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
 });
@@ -94,6 +113,8 @@ app.use('/api/documentos', createDocumentoConductorRoutes(documentoConductorCont
 app.use('/api/cotizar', createQuoteRoutes(quoteController));
 app.use('/api/envios', createShipmentRoutes(shipmentController));
 app.use('/api/envios', createDeliveryValidationRoutes(deliveryValidationController));
+app.use('/api/envios', createCalificationRoutes(calificationController));
+app.use('/api/conductores', createDriverApprovalRoutes(driverApprovalController));
 app.use('/api/envios', createAcceptShipmentRoutes(acceptShipmentController));
 app.use('/api/envios', createShipmentTrackingRoutes(shipmentTrackingController));
 
@@ -123,6 +144,9 @@ async function start() {
       console.log(`   POST http://localhost:${config.port}/api/envios/crear`);
       console.log(`   POST http://localhost:${config.port}/api/envios/aceptar`);
       console.log(`   GET http://localhost:${config.port}/api/envios/:id`);
+      console.log(`   POST http://localhost:${config.port}/api/envios/:id/validar-entrega`);
+      console.log(`   POST http://localhost:${config.port}/api/envios/:id/calificar`);
+      console.log(`   POST http://localhost:${config.port}/api/conductores/aprobar`);
     });
   } catch (error) {
     console.error('❌ Error iniciando el servidor:', error);

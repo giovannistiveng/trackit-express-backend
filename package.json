@@ -2,11 +2,11 @@
   "name": "trackit-express-backend",
   "version": "1.0.0",
   "description": "Backend de TrackIt Express - Node.js, Express, TypeScript, Arquitectura Hexagonal",
-  "main": "dist/src/infrastructure/http/server.js",
+  "main": "dist/infrastructure/http/server.js",
   "scripts": {
     "build": "tsc",
     "dev": "ts-node-dev --respawn --transpile-only src/infrastructure/http/server.ts",
-    "start": "node dist/src/infrastructure/http/server.js",
+    "start": "node dist/infrastructure/http/server.js",
     "test": "jest",
     "test:watch": "jest --watch"
   },

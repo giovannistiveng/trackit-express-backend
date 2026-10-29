@@ -16,7 +16,7 @@ export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
     return {
       id_zona: row.id_zona,
       nombre_zona: row.nombre_zona,
-      tarifa_base: row.tarifa_base,
+      tarifa_base: Number(row.tarifa_base),
     };
   }
 }
