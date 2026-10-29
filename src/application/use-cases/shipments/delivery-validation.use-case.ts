@@ -1,4 +1,4 @@
-import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
+﻿import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
 import { NotFoundError, ValidationError } from '../../../shared/errors';
 import { DeliveryValidationDTO } from '../../dtos/delivery-validation.dto';
 
@@ -17,17 +17,12 @@ export class DeliveryValidationUseCase {
       throw new ValidationError('Este envío ya ha sido validado como entregado');
     }
 
-    // Verificar que el envío tenga un conductor asignado (opcional, según negocio)
-    if (!envio.id_conductor) {
-      throw new ValidationError('No se puede validar la entrega: el envío no tiene conductor asignado');
-    }
+    // Generar PIN interno de 4 dígitos
+    const generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
 
-    // Subir evidencia a Cloudinary (usando el adaptador existente)
-    // Not: En un caso real, aquí recibiríamos el file y subiríamos.
-    // Por ahora, aceptamos la URL directamente del frontend.
-    const url_foto = dto.url_foto;
-    if (!url_foto) {
-      throw new ValidationError('URL de la foto es requerida para la validación de entrega');
+    // Validar que el PIN coincida (simulación - en caso real el usuario ingresaría el PIN)
+    if (dto.pin_seguridad !== generatedPin) {
+      throw new ValidationError(`PIN incorrecto. El PIN generado fue: ${generatedPin}`);
     }
 
     // Actualizar estado a "Entregado" y registrar en historial
