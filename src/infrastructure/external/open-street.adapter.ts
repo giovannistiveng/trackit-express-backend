@@ -12,7 +12,7 @@ export class OpenStreetAdapter implements DistancePort {
   private userAgent: string;
 
   constructor() {
-    this.userAgent = 'TrackIt-Express/1.0 (contacto@tuemail.com)';
+    this.userAgent = 'TrackIt-Express/1.0 (giovannistiven.g@gmail.com)';
   }
 
   async calcularDistancia(origen: string, destino: string): Promise<{ distancia_km: number; duracion_segundos: number }> {
