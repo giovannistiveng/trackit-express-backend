@@ -1,4 +1,7 @@
 import { config } from '../../config';
+import { logger } from '../../shared/logger';
+
+const log = logger.child('OpenStreetMap');
 
 export interface Coordenadas {
   lat: number;
@@ -20,13 +23,13 @@ export class OpenStreetAdapter {
     try {
       coordsOrigen = await this.obtenerCoordenadas(origen);
     } catch (error) {
-      console.warn(`No se pudo geocodificar origen "${origen}":`, error);
+      log.warn(`No se pudo geocodificar el origen "${origen}"`, error);
     }
 
     try {
       coordsDestino = await this.obtenerCoordenadas(destino);
     } catch (error) {
-      console.warn(`No se pudo geocodificar destino "${destino}":`, error);
+      log.warn(`No se pudo geocodificar el destino "${destino}"`, error);
     }
 
     // Si ambas coordenadas se obtuvieron, usar distancia real
@@ -36,6 +39,7 @@ export class OpenStreetAdapter {
       const duracionHoras = distanciaKm / velocidadPromedioKmh;
       const duracionSegundos = duracionHoras * 3600;
 
+      log.debug(`Distancia real "${origen}" → "${destino}": ${distanciaKm.toFixed(2)} km`);
       return {
         distancia_km: Math.round(distanciaKm * 100) / 100,
         duracion_segundos: Math.round(duracionSegundos),
@@ -43,8 +47,11 @@ export class OpenStreetAdapter {
     }
 
     // FALLBACK: distancia simulada basada en las direcciones
-    console.warn('Usando distancia simulada (OpenStreetMap no disponible)');
     const distanciaSimulada = this.calcularDistanciaSimulada(origen, destino);
+    log.warn(
+      `Usando distancia simulada (${distanciaSimulada} km) para "${origen}" → "${destino}": ` +
+        `origen ${coordsOrigen ? 'ok' : 'sin coordenadas'}, destino ${coordsDestino ? 'ok' : 'sin coordenadas'}`,
+    );
     const duracionSegundos = Math.round(distanciaSimulada * 120); // ~2 min por km
 
     return {
@@ -77,6 +84,7 @@ export class OpenStreetAdapter {
       const data = (await response.json()) as Array<{ lat: string; lon: string }>;
 
       if (!Array.isArray(data) || data.length === 0) {
+        log.debug(`Nominatim no encontró resultados para "${direccion}"`);
         return null;
       }
 
@@ -86,6 +94,13 @@ export class OpenStreetAdapter {
       };
     } catch (error) {
       clearTimeout(timeout);
+      const motivo =
+        error instanceof Error
+          ? error.name === 'AbortError'
+            ? 'tiempo de espera agotado (8 s)'
+            : error.message
+          : String(error);
+      log.warn(`Fallo consultando Nominatim para "${direccion}": ${motivo}`);
       return null;
     }
   }

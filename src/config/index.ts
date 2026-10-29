@@ -27,6 +27,12 @@ export const config = {
     apiKey: process.env.CLOUDINARY_API_KEY || '',
     apiSecret: process.env.CLOUDINARY_API_SECRET || '',
   },
+  log: {
+    dir: process.env.LOG_DIR || 'logs',
+    level: (process.env.LOG_LEVEL || '').toUpperCase(),
+    retentionDays: parseInt(process.env.LOG_RETENTION_DAYS || '30', 10),
+    toConsole: (process.env.LOG_TO_CONSOLE || 'true').toLowerCase() !== 'false',
+  },
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID || '',
     authToken: process.env.TWILIO_AUTH_TOKEN || '',

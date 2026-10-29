@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import { NotFoundError, ValidationError } from '../../../shared/errors';
 import { DriverApprovalUseCase } from '../../../application/use-cases/drivers/driver-approval.use-case';
 import { DriverApprovalDTO } from '../../../application/dtos/driver-approval.dto';
+import { logger } from '../../../shared/logger';
+
+const log = logger.child('AprobacionConductor');
 
 export class DriverApprovalController {
   constructor(private driverApprovalUseCase: DriverApprovalUseCase) {}
@@ -15,11 +18,15 @@ export class DriverApprovalController {
         driver: result.driver,
       });
     } catch (error: any) {
+      const where = `${req.method} ${req.originalUrl} id=${req.requestId ?? '-'}`;
       if (error instanceof NotFoundError) {
+        log.warn(`${where} → 404 ${error.message}`);
         res.status(404).json({ error: error.message });
       } else if (error instanceof ValidationError) {
+        log.warn(`${where} → 400 ${error.message}`);
         res.status(400).json({ error: error.message });
       } else {
+        log.error(`${where} → 500 Error no controlado`, error);
         res.status(500).json({ error: 'Error interno del servidor' });
       }
     }

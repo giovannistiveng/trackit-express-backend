@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { DocumentoConductorController } from '../controllers/documento-conductor.controller';
 import { AppError } from '../../../shared/errors';
+import { logger } from '../../../shared/logger';
+
+const log = logger.child('Documentos');
 
 export function createDocumentoConductorRoutes(controller: DocumentoConductorController): Router {
   const router = Router();
@@ -27,11 +30,13 @@ export function createDocumentoConductorRoutes(controller: DocumentoConductorCon
         await controller.upload(req, res);
       } catch (error) {
         if (error instanceof AppError) {
+          log.warn(`Carga de documento rechazada → ${error.statusCode} ${error.message} id=${req.requestId ?? '-'}`);
           res.status(error.statusCode).json({ error: error.message, statusCode: error.statusCode });
           return;
         }
         // Errores de multer (tamaño excedido, tipo inválido, etc.)
         const message = error instanceof Error ? error.message : 'Error al procesar el archivo';
+        log.error(`Error procesando la carga de documento id=${req.requestId ?? '-'}`, error);
         res.status(400).json({ error: message });
       }
     }

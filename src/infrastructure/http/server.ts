@@ -3,6 +3,8 @@ import cors from 'cors';
 import { config } from '../../config';
 import { pool, testConnection } from '../../config/database';
 import { AppError } from '../../shared/errors';
+import { logger } from '../../shared/logger';
+import { requestLogger } from './middlewares/request-logger.middleware';
 import { HashService } from '../security/hash.service';
 import { JWTService } from '../security/jwt.service';
 import { UserRepositoryPostgres } from '../database/repositories/user.repository.postgres';
@@ -45,11 +47,15 @@ import { DeliveryValidationUseCase } from '../../application/use-cases/shipments
 import { DeliveryValidationController } from './controllers/delivery-validation.controller';
 import { createDeliveryValidationRoutes } from './routes/delivery-validation.routes';
 
+const log = logger.child('Servidor');
+const httpLog = logger.child('HTTP');
+
 const app = express();
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger(httpLog));
 
 // --- Inyección de dependencias (módulo Auth) ---
 const hashService = new HashService();
@@ -119,13 +125,35 @@ app.use('/api/envios', createAcceptShipmentRoutes(acceptShipmentController));
 app.use('/api/envios', createShipmentTrackingRoutes(shipmentTrackingController));
 
 // Middleware de manejo de errores
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const where = `${req.method} ${req.originalUrl} id=${req.requestId ?? '-'}`;
   if (err instanceof AppError) {
+    // Errores esperados del negocio (validaciones, no encontrado, etc.)
+    log.warn(`${where} → ${err.statusCode} ${err.message}`);
     return res.status(err.statusCode).json({ error: err.message, statusCode: err.statusCode });
   }
-  console.error(err);
+  log.error(`${where} → 500 Error no controlado`, err);
   return res.status(500).json({ error: 'Error interno del servidor' });
 });
+
+// Errores que escapan a Express: se registran antes de que el proceso caiga
+process.on('unhandledRejection', (reason) => {
+  log.error('Promesa rechazada sin manejar', reason);
+});
+process.on('uncaughtException', (err) => {
+  log.fatal('Excepción no capturada, el servidor se detiene', err);
+  process.exit(1);
+});
+
+// Apagado ordenado: vacía los archivos de log antes de salir
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, async () => {
+    log.info(`Señal ${signal} recibida, apagando el servidor`);
+    await pool.end().catch(() => undefined);
+    await logger.close();
+    process.exit(0);
+  });
+}
 
 // Iniciar servidor
 async function start() {
@@ -134,7 +162,8 @@ async function start() {
     await testConnection();
 
     app.listen(config.port, () => {
-      console.log(`🚀 Servidor corriendo en http://localhost:${config.port}`);
+      log.info(`Servidor corriendo en http://localhost:${config.port} (entorno: ${config.nodeEnv})`);
+      log.info(`Logs en ${logger.directory}`);
       console.log(`📋 Endpoints disponibles:`);
       console.log(`   POST http://localhost:${config.port}/api/auth/register`);
       console.log(`   POST http://localhost:${config.port}/api/auth/login`);
@@ -149,7 +178,7 @@ async function start() {
       console.log(`   POST http://localhost:${config.port}/api/conductores/aprobar`);
     });
   } catch (error) {
-    console.error('❌ Error iniciando el servidor:', error);
+    log.fatal('Error iniciando el servidor', error);
     process.exit(1);
   }
 }
