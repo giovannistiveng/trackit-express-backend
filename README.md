@@ -123,8 +123,9 @@ npm test
 3. Ejecuta:
    ```bash
    npm run test:coverage
-   npx sonar-scanner -Dsonar.host.url=http://localhost:9000 -Dsonar.token=TU_TOKEN
+   npm run sonar -- -Dsonar.host.url=http://localhost:9000 -Dsonar.token=TU_TOKEN
    ```
+   El escáner (`sonarqube-scanner` 5) necesita Node.js 22.12 o superior y descarga el motor de análisis la primera vez.
 
 ## Despliegue
 

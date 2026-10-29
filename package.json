@@ -12,7 +12,7 @@
     "test:coverage": "jest --coverage",
     "db:setup": "ts-node --transpile-only scripts/db.ts setup",
     "db:migrate": "ts-node --transpile-only scripts/db.ts migrate",
-    "sonar": "sonar-scanner"
+    "sonar": "sonar-scanner-npm"
   },
   "keywords": [
     "trackit",
