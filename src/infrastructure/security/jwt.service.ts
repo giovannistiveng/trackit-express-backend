@@ -1,24 +1,23 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
+import { TokenPayload, TokenServicePort } from '../../domain/repositories/services.port';
 
-export interface JWTPayload {
-  userId: number;
-  email: string;
-  role: string;
-}
+export type JWTPayload = TokenPayload;
 
-export class JWTService {
-  sign(payload: JWTPayload): string {
-    return jwt.sign(
-      payload,
-      config.jwt.secret,
-      { expiresIn: config.jwt.expiresIn } as jwt.SignOptions
-    );
+export class JWTService implements TokenServicePort {
+  constructor(
+    private readonly secret: string = config.jwt.secret,
+    private readonly expiresIn: string = config.jwt.expiresIn,
+  ) {}
+
+  sign(payload: TokenPayload): string {
+    return jwt.sign(payload, this.secret, { expiresIn: this.expiresIn } as jwt.SignOptions);
   }
 
-  verify(token: string): JWTPayload | null {
+  verify(token: string): TokenPayload | null {
     try {
-      return jwt.verify(token, config.jwt.secret) as JWTPayload;
+      const p = jwt.verify(token, this.secret) as Partial<TokenPayload>;
+      return typeof p.userId === 'number' && typeof p.role === 'string' ? { userId: p.userId, email: p.email ?? '', role: p.role } : null;
     } catch {
       return null;
     }

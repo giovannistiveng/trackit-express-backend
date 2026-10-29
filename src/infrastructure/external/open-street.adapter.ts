@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { DistancePort } from '../../domain/repositories/services.port';
 import { logger } from '../../shared/logger';
 
 const log = logger.child('OpenStreetMap');
@@ -8,7 +8,7 @@ export interface Coordenadas {
   lon: number;
 }
 
-export class OpenStreetAdapter {
+export class OpenStreetAdapter implements DistancePort {
   private userAgent: string;
 
   constructor() {

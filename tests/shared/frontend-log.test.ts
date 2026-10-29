@@ -5,7 +5,7 @@ import path from 'path';
 import http from 'http';
 import express from 'express';
 import { Logger } from '../../src/shared/logger/logger';
-import { FrontendLogController, normalizarEvento } from '../../src/infrastructure/http/controllers/frontend-log.controller';
+import { FrontendLogController, normalizarEvento } from '../../src/infrastructure/http/frontend-log.controller';
 import { createFrontendLogRoutes } from '../../src/infrastructure/http/routes/frontend-log.routes';
 import { rateLimit } from '../../src/infrastructure/http/middlewares/rate-limit.middleware';
 
@@ -95,6 +95,14 @@ describe('POST /api/logs/frontend', () => {
 });
 
 describe('rateLimit', () => {
+  const antes = process.env.RATE_LIMIT_DISABLED;
+  beforeAll(() => {
+    process.env.RATE_LIMIT_DISABLED = 'false';
+  });
+  afterAll(() => {
+    process.env.RATE_LIMIT_DISABLED = antes;
+  });
+
   it('debería responder 429 al superar el máximo y reiniciar al pasar la ventana', async () => {
     let ahora = 0;
     const app = express();

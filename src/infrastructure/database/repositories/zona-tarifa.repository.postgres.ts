@@ -2,21 +2,26 @@ import { Pool } from 'pg';
 import { ZonaTarifa } from '../../../domain/entities/zona-tarifa.entity';
 import { ZonaTarifaRepositoryPort } from '../../../domain/repositories/zona-tarifa.repository.port';
 
+interface ZonaRow {
+  id_zona: number;
+  nombre_zona: string;
+  tarifa_base: string | number;
+}
+
 export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
-  constructor(private pool: Pool) {}
+  constructor(private readonly pool: Pool) {}
 
   async findById(id_zona: number): Promise<ZonaTarifa | null> {
-    const query = 'SELECT * FROM Zona_Tarifa WHERE id_zona = $1';
-    const result = await this.pool.query(query, [id_zona]);
-    if (result.rows.length === 0) return null;
-    return this.mapRow(result.rows[0]);
+    const result = await this.pool.query<ZonaRow>('SELECT * FROM Zona_Tarifa WHERE id_zona = $1', [id_zona]);
+    return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
 
-  private mapRow(row: any): ZonaTarifa {
-    return {
-      id_zona: row.id_zona,
-      nombre_zona: row.nombre_zona,
-      tarifa_base: Number(row.tarifa_base),
-    };
+  async findAll(): Promise<ZonaTarifa[]> {
+    const result = await this.pool.query<ZonaRow>('SELECT * FROM Zona_Tarifa ORDER BY tarifa_base, id_zona');
+    return result.rows.map((r) => this.mapRow(r));
+  }
+
+  private mapRow(row: ZonaRow): ZonaTarifa {
+    return { id_zona: row.id_zona, nombre_zona: row.nombre_zona, tarifa_base: Number(row.tarifa_base) };
   }
 }

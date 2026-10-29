@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS Usuario (
 CREATE TABLE IF NOT EXISTS Conductor (
     id_conductor SERIAL PRIMARY KEY,
     estado_aprobacion VARCHAR(30) NOT NULL DEFAULT 'Pendiente' CHECK (estado_aprobacion IN ('Pendiente', 'Aprobado', 'Rechazado')),
+    motivo_rechazo VARCHAR(255),
     id_usuario INTEGER NOT NULL UNIQUE,
     CONSTRAINT fk_conductor_usuario FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario)
 );
@@ -65,6 +66,8 @@ CREATE TABLE IF NOT EXISTS Envio (
     id_cliente INTEGER NOT NULL,
     id_conductor INTEGER,
     id_zona INTEGER NOT NULL,
+    categoria VARCHAR(50) CHECK (categoria IS NULL OR categoria IN ('Moto Express', 'Motocarro', 'Camioneta')),
+    fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_envio_cliente FOREIGN KEY (id_cliente) REFERENCES Usuario(id_usuario),
     CONSTRAINT fk_envio_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor),
     CONSTRAINT fk_envio_zona FOREIGN KEY (id_zona) REFERENCES Zona_Tarifa(id_zona)
@@ -96,6 +99,31 @@ CREATE TABLE IF NOT EXISTS Calificacion (
     CONSTRAINT fk_calificacion_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio)
 );
 
+-- Tabla: Ubicacion_Envio (posición del conductor durante el servicio)
+CREATE TABLE IF NOT EXISTS Ubicacion_Envio (
+    id_ubicacion SERIAL PRIMARY KEY,
+    id_envio INTEGER NOT NULL,
+    latitud DECIMAL(9,6) NOT NULL CHECK (latitud BETWEEN -90 AND 90),
+    longitud DECIMAL(9,6) NOT NULL CHECK (longitud BETWEEN -180 AND 180),
+    capturado_en TIMESTAMP NOT NULL,
+    recibido_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ubicacion_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio),
+    CONSTRAINT uq_ubicacion_envio_captura UNIQUE (id_envio, capturado_en)
+);
+
+-- Tabla: Auditoria (acciones relevantes de los usuarios)
+CREATE TABLE IF NOT EXISTS Auditoria (
+    id_auditoria SERIAL PRIMARY KEY,
+    fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_usuario INTEGER,
+    correo_usuario VARCHAR(180),
+    accion VARCHAR(80) NOT NULL,
+    entidad VARCHAR(40) NOT NULL,
+    id_entidad INTEGER,
+    detalle VARCHAR(500),
+    CONSTRAINT fk_auditoria_usuario FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario)
+);
+
 -- Índices para optimizar consultas frecuentes
 CREATE INDEX IF NOT EXISTS idx_usuario_correo ON Usuario(correo);
 CREATE INDEX IF NOT EXISTS idx_usuario_rol ON Usuario(id_rol);
@@ -107,3 +135,8 @@ CREATE INDEX IF NOT EXISTS idx_envio_zona ON Envio(id_zona);
 CREATE INDEX IF NOT EXISTS idx_historial_envio ON Historial_Estado(id_envio);
 CREATE INDEX IF NOT EXISTS idx_evidencia_envio ON Evidencia_Entrega(id_envio);
 CREATE INDEX IF NOT EXISTS idx_calificacion_envio ON Calificacion(id_envio);
+CREATE INDEX IF NOT EXISTS idx_envio_fecha_creacion ON Envio(fecha_creacion);
+CREATE INDEX IF NOT EXISTS idx_ubicacion_envio ON Ubicacion_Envio(id_envio, capturado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_auditoria_fecha ON Auditoria(fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_auditoria_accion ON Auditoria(accion);
+CREATE INDEX IF NOT EXISTS idx_documento_conductor ON Documento_Conductor(id_conductor);

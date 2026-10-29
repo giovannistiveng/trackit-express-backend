@@ -6,6 +6,9 @@ export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   db: {
+    /** Si existe (Render, Railway, Heroku), tiene prioridad sobre los campos sueltos. */
+    url: process.env.DATABASE_URL || '',
+    ssl: (process.env.DB_SSL || 'false').toLowerCase() === 'true',
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
     user: process.env.DB_USER || 'postgres',
@@ -19,9 +22,11 @@ export const config = {
   bcrypt: {
     saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '10', 10),
   },
-  openStreet: {
-    apiKey: process.env.OPENSTREET_API_KEY || '',
-  },
+  /** URL pública del backend (para construir enlaces a archivos guardados en disco). */
+  publicUrl: (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || '3000'}`).replace(/\/$/, ''),
+  /** Orígenes permitidos por CORS, separados por coma. Vacío = cualquiera (solo desarrollo). */
+  corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean),
+  uploadsDir: process.env.UPLOADS_DIR || 'uploads',
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
     apiKey: process.env.CLOUDINARY_API_KEY || '',
@@ -32,10 +37,5 @@ export const config = {
     level: (process.env.LOG_LEVEL || '').toUpperCase(),
     retentionDays: parseInt(process.env.LOG_RETENTION_DAYS || '30', 10),
     toConsole: (process.env.LOG_TO_CONSOLE || 'true').toLowerCase() !== 'false',
-  },
-  twilio: {
-    accountSid: process.env.TWILIO_ACCOUNT_SID || '',
-    authToken: process.env.TWILIO_AUTH_TOKEN || '',
-    phoneNumber: process.env.TWILIO_PHONE_NUMBER || '',
   },
 };

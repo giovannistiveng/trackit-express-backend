@@ -1,146 +1,48 @@
-import express from 'express';
-import cors from 'cors';
 import { config } from '../../config';
 import { pool, testConnection } from '../../config/database';
-import { AppError } from '../../shared/errors';
-import { logger, frontendLogger } from '../../shared/logger';
-import { FrontendLogController } from './controllers/frontend-log.controller';
-import { createFrontendLogRoutes } from './routes/frontend-log.routes';
-import { requestLogger } from './middlewares/request-logger.middleware';
-import { HashService } from '../security/hash.service';
-import { JWTService } from '../security/jwt.service';
-import { UserRepositoryPostgres } from '../database/repositories/user.repository.postgres';
-import { RegisterUserUseCase } from '../../application/use-cases/auth/register-user.use-case';
-import { LoginUserUseCase } from '../../application/use-cases/auth/login-user.use-case';
-import { AuthController } from './controllers/auth.controller';
-import { createAuthRoutes } from './routes/auth.routes';
-import { VehicleRepositoryPostgres } from '../database/repositories/vehicle.repository.postgres';
-import { RegisterVehicleUseCase } from '../../application/use-cases/vehicles/register-vehicle.use-case';
-import { VehicleController } from './controllers/vehicle.controller';
-import { createVehicleRoutes } from './routes/vehicle.routes';
-import { DocumentoConductorRepositoryPostgres } from '../database/repositories/documento-conductor.repository.postgres';
-import { CloudinaryAdapter } from '../external/cloudinary.adapter';
-import { UploadDriverDocumentUseCase } from '../../application/use-cases/drivers/upload-driver-document.use-case';
-import { DocumentoConductorController } from './controllers/documento-conductor.controller';
-import { createDocumentoConductorRoutes } from './routes/documento-conductor.routes';
-import { ZonaTarifaRepositoryPostgres } from '../database/repositories/zona-tarifa.repository.postgres';
-import { OpenStreetAdapter } from '../external/open-street.adapter';
-import { QuoteShipmentUseCase } from '../../application/use-cases/shipments/quote-shipment.use-case';
-import { QuoteController } from './controllers/quote.controller';
-import { createQuoteRoutes } from './routes/quote.routes';
-import { ShipmentRepositoryPostgres } from '../database/repositories/shipment.repository.postgres';
-import { CreateShipmentUseCase } from '../../application/use-cases/shipments/create-shipment.use-case';
-import { ShipmentController } from './controllers/shipment.controller';
-import { createShipmentRoutes } from './routes/shipment.routes';
-import { AcceptShipmentUseCase } from '../../application/use-cases/shipments/accept-shipment.use-case';
-import { AcceptShipmentController } from './controllers/accept-shipment.controller';
-import { createAcceptShipmentRoutes } from './routes/accept-shipment.routes';
-import { ShipmentTrackingUseCase } from '../../application/use-cases/shipments/shipment-tracking.use-case';
-import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
-import { createShipmentTrackingRoutes } from './routes/shipment-tracking.routes';
-import { CalificationUseCase } from '../../application/use-cases/shipments/calification.use-case';
-import { CalificationController } from './controllers/calification.controller';
-import { DriverApprovalUseCase } from '../../application/use-cases/drivers/driver-approval.use-case';
-import { DriverApprovalController } from './controllers/driver-approval.controller';
-import { createDriverApprovalRoutes } from './routes/driver-approval.routes';
-import { createCalificationRoutes } from './routes/calification.routes';
-import { DriverRepositoryPostgres } from '../database/repositories/driver.repository.postgres';
-import { DeliveryValidationUseCase } from '../../application/use-cases/shipments/delivery-validation.use-case';
-import { DeliveryValidationController } from './controllers/delivery-validation.controller';
-import { createDeliveryValidationRoutes } from './routes/delivery-validation.routes';
+import { frontendLogger, logger } from '../../shared/logger';
+import { crearContenedor } from '../container';
+import { crearApp } from './app';
 
 const log = logger.child('Servidor');
-const httpLog = logger.child('HTTP');
 
-const app = express();
+const SECRETO_POR_DEFECTO = 'default_secret_change_in_production';
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
-app.use(requestLogger(httpLog));
-
-// --- Inyección de dependencias (módulo Auth) ---
-const hashService = new HashService();
-const jwtService = new JWTService();
-const userRepository = new UserRepositoryPostgres(pool);
-const registerUserUseCase = new RegisterUserUseCase(userRepository, hashService);
-const loginUserUseCase = new LoginUserUseCase(userRepository, hashService, jwtService);
-const authController = new AuthController(registerUserUseCase, loginUserUseCase);
-
-// --- Inyección de dependencias (módulo Vehículos) ---
-const vehicleRepository = new VehicleRepositoryPostgres(pool);
-const registerVehicleUseCase = new RegisterVehicleUseCase(vehicleRepository);
-const vehicleController = new VehicleController(registerVehicleUseCase);
-
-// --- Inyección de dependencias (módulo Documentos de Conductor) ---
-const documentoRepository = new DocumentoConductorRepositoryPostgres(pool);
-const cloudinaryAdapter = new CloudinaryAdapter();
-const uploadDriverDocumentUseCase = new UploadDriverDocumentUseCase(documentoRepository, cloudinaryAdapter);
-const documentoConductorController = new DocumentoConductorController(uploadDriverDocumentUseCase);
-
-// --- Inyección de dependencias (módulo Cotización) ---
-const zonaRepository = new ZonaTarifaRepositoryPostgres(pool);
-const openStreetAdapter = new OpenStreetAdapter();
-const quoteShipmentUseCase = new QuoteShipmentUseCase(zonaRepository, openStreetAdapter);
-const quoteController = new QuoteController(quoteShipmentUseCase);
-
-// --- Inyección de dependencias (módulo Envíos) ---
-const shipmentRepository = new ShipmentRepositoryPostgres(pool);
-const createShipmentUseCase = new CreateShipmentUseCase(shipmentRepository, zonaRepository, openStreetAdapter);
-const shipmentController = new ShipmentController(createShipmentUseCase);
-
-// --- Inyección de dependencias (módulo Aceptación de Envíos - RF7) ---
-const acceptShipmentUseCase = new AcceptShipmentUseCase(shipmentRepository);
-const acceptShipmentController = new AcceptShipmentController(acceptShipmentUseCase);
-
-// --- Inyección de dependencias (módulo Trazabilidad - RF8) ---
-const shipmentTrackingUseCase = new ShipmentTrackingUseCase(shipmentRepository);
-const shipmentTrackingController = new ShipmentTrackingController(shipmentTrackingUseCase);
-
-// --- Inyección de dependencias (módulo Calificación - RF10) ---
-const calificationUseCase = new CalificationUseCase(shipmentRepository);
-const calificationController = new CalificationController(calificationUseCase);
-
-// --- Inyección de dependencias (módulo Aprobación de Conductores - RF11) ---
-const driverRepository = new DriverRepositoryPostgres(pool);
-const driverApprovalUseCase = new DriverApprovalUseCase(driverRepository);
-const driverApprovalController = new DriverApprovalController(driverApprovalUseCase);
-
-// --- Inyección de dependencias (módulo Validación de Entrega - RF9) ---
-const deliveryValidationUseCase = new DeliveryValidationUseCase(shipmentRepository);
-const deliveryValidationController = new DeliveryValidationController(deliveryValidationUseCase);
-
-// --- Logs enviados por el frontend ---
-const frontendLogController = new FrontendLogController(frontendLogger);
-
-// Rutas
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
-});
-
-app.use('/api/auth', createAuthRoutes(authController));
-app.use('/api/vehicles', createVehicleRoutes(vehicleController));
-app.use('/api/documentos', createDocumentoConductorRoutes(documentoConductorController));
-app.use('/api/cotizar', createQuoteRoutes(quoteController));
-app.use('/api/envios', createShipmentRoutes(shipmentController));
-app.use('/api/envios', createDeliveryValidationRoutes(deliveryValidationController));
-app.use('/api/envios', createCalificationRoutes(calificationController));
-app.use('/api/conductores', createDriverApprovalRoutes(driverApprovalController));
-app.use('/api/envios', createAcceptShipmentRoutes(acceptShipmentController));
-app.use('/api/envios', createShipmentTrackingRoutes(shipmentTrackingController));
-app.use('/api/logs', createFrontendLogRoutes(frontendLogController));
-
-// Middleware de manejo de errores
-app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const where = `${req.method} ${req.originalUrl} id=${req.requestId ?? '-'}`;
-  if (err instanceof AppError) {
-    // Errores esperados del negocio (validaciones, no encontrado, etc.)
-    log.warn(`${where} → ${err.statusCode} ${err.message}`);
-    return res.status(err.statusCode).json({ error: err.message, statusCode: err.statusCode });
+async function start(): Promise<void> {
+  if (config.nodeEnv === 'production' && (config.jwt.secret === SECRETO_POR_DEFECTO || config.jwt.secret.length < 32)) {
+    log.fatal('JWT_SECRET no está configurado o es demasiado corto (mínimo 32 caracteres) para producción');
+    process.exit(1);
   }
-  log.error(`${where} → 500 Error no controlado`, err);
-  return res.status(500).json({ error: 'Error interno del servidor' });
-});
+
+  await testConnection();
+  const contenedor = crearContenedor({ pool, log });
+  const app = crearApp({
+    contenedor,
+    log,
+    salud: async () => {
+      await pool.query('SELECT 1');
+      return true;
+    },
+  });
+
+  const server = app.listen(config.port, () => {
+    log.info(`Servidor corriendo en http://localhost:${config.port} (entorno: ${config.nodeEnv})`);
+    log.info(`Documentación de la API en http://localhost:${config.port}/api/docs`);
+    log.info(`Archivos: ${contenedor.storageLocal ? `disco local (${config.uploadsDir})` : 'Cloudinary'} · Logs en ${logger.directory}`);
+  });
+
+  // Apagado ordenado: deja de aceptar peticiones, cierra la base de datos y vacía los logs
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      log.info(`Señal ${signal} recibida, apagando el servidor`);
+      server.close(async () => {
+        await pool.end().catch(() => undefined);
+        await Promise.all([logger.close(), frontendLogger.close()]);
+        process.exit(0);
+      });
+    });
+  }
+}
 
 // Errores que escapan a Express: se registran antes de que el proceso caiga
 process.on('unhandledRejection', (reason) => {
@@ -151,45 +53,7 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-// Apagado ordenado: vacía los archivos de log antes de salir
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, async () => {
-    log.info(`Señal ${signal} recibida, apagando el servidor`);
-    await pool.end().catch(() => undefined);
-    await Promise.all([logger.close(), frontendLogger.close()]);
-    process.exit(0);
-  });
-}
-
-// Iniciar servidor
-async function start() {
-  try {
-    // Verificar conexión a la base de datos antes de aceptar peticiones
-    await testConnection();
-
-    app.listen(config.port, () => {
-      log.info(`Servidor corriendo en http://localhost:${config.port} (entorno: ${config.nodeEnv})`);
-      log.info(`Logs en ${logger.directory}`);
-      console.log(`📋 Endpoints disponibles:`);
-      console.log(`   POST http://localhost:${config.port}/api/auth/register`);
-      console.log(`   POST http://localhost:${config.port}/api/auth/login`);
-      console.log(`   POST http://localhost:${config.port}/api/vehicles/register`);
-      console.log(`   POST http://localhost:${config.port}/api/documentos/upload`);
-      console.log(`   POST http://localhost:${config.port}/api/cotizar/cotizar`);
-      console.log(`   POST http://localhost:${config.port}/api/envios/crear`);
-      console.log(`   POST http://localhost:${config.port}/api/envios/aceptar`);
-      console.log(`   GET http://localhost:${config.port}/api/envios/:id`);
-      console.log(`   POST http://localhost:${config.port}/api/envios/:id/validar-entrega`);
-      console.log(`   POST http://localhost:${config.port}/api/envios/:id/calificar`);
-      console.log(`   POST http://localhost:${config.port}/api/conductores/aprobar`);
-      console.log(`   POST http://localhost:${config.port}/api/logs/frontend`);
-    });
-  } catch (error) {
-    log.fatal('Error iniciando el servidor', error);
-    process.exit(1);
-  }
-}
-
-start();
-
-export default app;
+start().catch((error) => {
+  log.fatal('Error iniciando el servidor', error);
+  process.exit(1);
+});

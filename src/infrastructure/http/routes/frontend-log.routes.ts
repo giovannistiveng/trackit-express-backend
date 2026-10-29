@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { FrontendLogController } from '../controllers/frontend-log.controller';
+import { FrontendLogController } from '../frontend-log.controller';
 import { rateLimit } from '../middlewares/rate-limit.middleware';
 
 export function createFrontendLogRoutes(controller: FrontendLogController): Router {

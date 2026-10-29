@@ -2,12 +2,6 @@ import { randomUUID } from 'crypto';
 import { NextFunction, Request, Response } from 'express';
 import { Logger } from '../../../shared/logger';
 
-declare module 'express-serve-static-core' {
-  interface Request {
-    requestId?: string;
-  }
-}
-
 /**
  * Registra cada petición HTTP al terminar: método, ruta, código, duración, IP e id de petición.
  *   - 2xx/3xx → INFO

@@ -5,6 +5,7 @@ import { NextFunction, Request, Response } from 'express';
  * Suficiente para proteger el endpoint de logs; para varios servidores habría que usar Redis.
  */
 export function rateLimit(max: number, windowMs: number, now: () => number = Date.now) {
+  if (process.env.RATE_LIMIT_DISABLED === 'true') return (_req: Request, _res: Response, next: NextFunction) => next();
   const hits = new Map<string, { count: number; resetAt: number }>();
 
   return (req: Request, res: Response, next: NextFunction): void => {

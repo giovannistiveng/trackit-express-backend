@@ -6,4 +6,5 @@ export interface Conductor {
   nombre: string;
   correo: string;
   estado_aprobacion: EstadoAprobacion;
+  motivo_rechazo?: string | null;
 }
