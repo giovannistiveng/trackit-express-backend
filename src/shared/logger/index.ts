@@ -24,3 +24,16 @@ export const logger = new Logger({
   retentionDays: config.log.retentionDays,
   toConsole: config.log.toConsole && config.nodeEnv !== 'test',
 });
+
+/**
+ * Logger para los eventos que envía el frontend (POST /api/logs/frontend).
+ * Escribe en frontend-AAAA-MM-DD.txt, separado de los logs del servidor.
+ */
+export const frontendLogger = new Logger({
+  dir: path.resolve(config.log.dir),
+  level: 'DEBUG',
+  retentionDays: config.log.retentionDays,
+  toConsole: false,
+  filePrefix: 'frontend',
+  errorFilePrefix: null,
+});

@@ -3,7 +3,9 @@ import cors from 'cors';
 import { config } from '../../config';
 import { pool, testConnection } from '../../config/database';
 import { AppError } from '../../shared/errors';
-import { logger } from '../../shared/logger';
+import { logger, frontendLogger } from '../../shared/logger';
+import { FrontendLogController } from './controllers/frontend-log.controller';
+import { createFrontendLogRoutes } from './routes/frontend-log.routes';
 import { requestLogger } from './middlewares/request-logger.middleware';
 import { HashService } from '../security/hash.service';
 import { JWTService } from '../security/jwt.service';
@@ -108,6 +110,9 @@ const driverApprovalController = new DriverApprovalController(driverApprovalUseC
 const deliveryValidationUseCase = new DeliveryValidationUseCase(shipmentRepository);
 const deliveryValidationController = new DeliveryValidationController(deliveryValidationUseCase);
 
+// --- Logs enviados por el frontend ---
+const frontendLogController = new FrontendLogController(frontendLogger);
+
 // Rutas
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', message: 'TrackIt Express Backend está funcionando' });
@@ -123,6 +128,7 @@ app.use('/api/envios', createCalificationRoutes(calificationController));
 app.use('/api/conductores', createDriverApprovalRoutes(driverApprovalController));
 app.use('/api/envios', createAcceptShipmentRoutes(acceptShipmentController));
 app.use('/api/envios', createShipmentTrackingRoutes(shipmentTrackingController));
+app.use('/api/logs', createFrontendLogRoutes(frontendLogController));
 
 // Middleware de manejo de errores
 app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -150,7 +156,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {
     log.info(`Señal ${signal} recibida, apagando el servidor`);
     await pool.end().catch(() => undefined);
-    await logger.close();
+    await Promise.all([logger.close(), frontendLogger.close()]);
     process.exit(0);
   });
 }
@@ -176,6 +182,7 @@ async function start() {
       console.log(`   POST http://localhost:${config.port}/api/envios/:id/validar-entrega`);
       console.log(`   POST http://localhost:${config.port}/api/envios/:id/calificar`);
       console.log(`   POST http://localhost:${config.port}/api/conductores/aprobar`);
+      console.log(`   POST http://localhost:${config.port}/api/logs/frontend`);
     });
   } catch (error) {
     log.fatal('Error iniciando el servidor', error);

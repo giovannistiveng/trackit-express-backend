@@ -52,6 +52,7 @@ El backend registra su actividad en archivos de texto dentro de la carpeta `logs
 |---|---|
 | `logs/trackit-AAAA-MM-DD.txt` | Todo lo del día: arranque, cada petición HTTP (método, ruta, código, duración, IP, id), consultas a OpenStreetMap y errores |
 | `logs/errores-AAAA-MM-DD.txt` | Solo `WARN` y `ERROR`, para revisar fallas rápido |
+| `logs/frontend-AAAA-MM-DD.txt` | Eventos que envía el frontend a `POST /api/logs/frontend` (errores de pantalla, fallos HTTP, acciones clave) |
 
 Formato de cada línea:
 
@@ -81,3 +82,20 @@ const log = logger.child('MiModulo');
 log.info('Algo pasó', { id_envio: 5 });
 log.error('Algo falló', error);
 ```
+
+### Logs del frontend
+
+El navegador no puede escribir archivos, así que el frontend envía sus eventos por lotes:
+
+```
+POST /api/logs/frontend
+{ "eventos": [ { "nivel": "ERROR", "mensaje": "...", "contexto": "Cotizacion",
+                 "fecha": "2026-10-29T11:30:00.000Z", "url": "/cliente/nuevo-envio",
+                 "sesion": "a1b2c3", "usuario": 1, "meta": { } } ] }
+→ 202 { "recibidos": 1, "descartados": 0 }
+```
+
+- `nivel` (`DEBUG`, `INFO`, `WARN`, `ERROR`) y `mensaje` (máx. 2.000 caracteres) son obligatorios; el resto es opcional.
+- Máximo 50 eventos por lote y 30 lotes por minuto por IP (si se supera, responde 429).
+- Los eventos inválidos se descartan sin rechazar el lote. Se quitan los saltos de línea del mensaje para que no se puedan falsificar líneas del log.
+- El servidor agrega la IP y el navegador (`User-Agent`), y oculta los mismos datos sensibles que en el resto de logs.

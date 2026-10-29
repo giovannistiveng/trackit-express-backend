@@ -26,6 +26,10 @@ export interface LoggerOptions {
   level: LogLevel;
   retentionDays: number;
   toConsole: boolean;
+  /** Prefijo del archivo principal (por defecto "trackit" → trackit-AAAA-MM-DD.txt). */
+  filePrefix?: string;
+  /** Prefijo del archivo de WARN/ERROR; null para no generar ese archivo (por defecto "errores"). */
+  errorFilePrefix?: string | null;
   /** Permite fijar la fecha en pruebas. */
   now?: () => Date;
 }
@@ -94,7 +98,7 @@ export class Logger {
   private fileWritingDisabled = false;
 
   constructor(options: LoggerOptions, private readonly context?: string, private readonly parent?: Logger) {
-    this.opts = { now: () => new Date(), ...options };
+    this.opts = { now: () => new Date(), filePrefix: 'trackit', errorFilePrefix: 'errores', ...options };
     if (!parent) this.init();
   }
 
@@ -130,8 +134,10 @@ export class Logger {
     if (root.fileWritingDisabled) return;
     try {
       const date = formatDate(root.opts.now());
-      fs.appendFileSync(path.join(root.opts.dir, `trackit-${date}.txt`), line + '\n', 'utf8');
-      fs.appendFileSync(path.join(root.opts.dir, `errores-${date}.txt`), line + '\n', 'utf8');
+      fs.appendFileSync(path.join(root.opts.dir, `${root.opts.filePrefix}-${date}.txt`), line + '\n', 'utf8');
+      if (root.opts.errorFilePrefix) {
+        fs.appendFileSync(path.join(root.opts.dir, `${root.opts.errorFilePrefix}-${date}.txt`), line + '\n', 'utf8');
+      }
     } catch {
       /* si no se puede escribir, al menos quedó en consola */
     }
@@ -219,16 +225,18 @@ export class Logger {
       console.error('[logger] Error escribiendo el archivo de log:', err.message);
     };
 
-    this.mainStream = fs.createWriteStream(path.join(this.opts.dir, `trackit-${today}.txt`), {
-      flags: 'a',
-      encoding: 'utf8',
-    });
-    this.errorStream = fs.createWriteStream(path.join(this.opts.dir, `errores-${today}.txt`), {
+    this.mainStream = fs.createWriteStream(path.join(this.opts.dir, `${this.opts.filePrefix}-${today}.txt`), {
       flags: 'a',
       encoding: 'utf8',
     });
     this.mainStream.on('error', onError);
-    this.errorStream.on('error', onError);
+    if (this.opts.errorFilePrefix) {
+      this.errorStream = fs.createWriteStream(path.join(this.opts.dir, `${this.opts.errorFilePrefix}-${today}.txt`), {
+        flags: 'a',
+        encoding: 'utf8',
+      });
+      this.errorStream.on('error', onError);
+    }
   }
 
   /** Borra los archivos de log más antiguos que la retención configurada. */
@@ -240,8 +248,9 @@ export class Logger {
     const limitStr = formatDate(limit);
 
     for (const file of fs.readdirSync(this.opts.dir)) {
-      const match = /^(trackit|errores)-(\d{4}-\d{2}-\d{2})\.txt$/.exec(file);
-      if (match && match[2] < limitStr) {
+      const match = /^(.+)-(\d{4}-\d{2}-\d{2})\.txt$/.exec(file);
+      const own = match && (match[1] === this.opts.filePrefix || match[1] === this.opts.errorFilePrefix);
+      if (match && own && match[2] < limitStr) {
         try {
           fs.unlinkSync(path.join(this.opts.dir, file));
         } catch {

@@ -32,7 +32,9 @@ export function requestLogger(log: Logger) {
       else if (status >= 400) log.warn(msg);
       else log.info(msg);
 
-      if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+      // El cuerpo de /api/logs ya queda en frontend-*.txt; no se duplica aquí
+      const esLog = req.originalUrl.startsWith('/api/logs');
+      if (!esLog && req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
         log.debug(`Cuerpo de la petición id=${requestId}`, req.body);
       }
     });
