@@ -1,36 +1,59 @@
 {
   "name": "trackit-express-backend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Backend de TrackIt Express - Node.js, Express, TypeScript, Arquitectura Hexagonal",
-  "main": "dist/src/infrastructure/http/server.js",
+  "main": "dist/infrastructure/http/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/infrastructure/http/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/infrastructure/http/server.ts",
-    "start": "node dist/src/infrastructure/http/server.js",
+    "typecheck": "tsc --noEmit",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:coverage": "jest --coverage",
+    "db:setup": "ts-node --transpile-only scripts/db.ts setup",
+    "db:migrate": "ts-node --transpile-only scripts/db.ts migrate",
+    "sonar": "sonar-scanner-npm"
   },
-  "keywords": ["trackit", "logistica", "express", "typescript", "hexagonal"],
+  "keywords": [
+    "trackit",
+    "logistica",
+    "express",
+    "typescript",
+    "hexagonal"
+  ],
   "author": "TrackIt Express Team",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.11.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^5.2.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.11.3"
+    "multer": "^2.5.0",
+    "pg": "^8.11.3",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.6",
+    "@types/multer": "^1.4.12",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.9",
+    "@types/supertest": "^7.2.1",
+    "@types/swagger-ui-express": "^4.1.8",
     "jest": "^29.7.0",
+    "sonarqube-scanner": "^5.0.2",
+    "supertest": "^7.3.1",
     "ts-jest": "^29.1.1",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

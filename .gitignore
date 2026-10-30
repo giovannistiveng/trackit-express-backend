@@ -35,3 +35,9 @@ coverage/
 
 # Angular
 .angular/
+
+# Archivos subidos (almacenamiento local)
+uploads/
+
+# SonarQube
+.scannerwork/
