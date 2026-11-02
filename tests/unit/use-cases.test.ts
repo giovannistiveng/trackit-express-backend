@@ -2,7 +2,7 @@ import { AuditService } from '../../src/application/services/audit.service';
 import { presentarEnvio } from '../../src/application/services/envio.presenter';
 import { esContrasenaSegura, idValido, textoValido } from '../../src/application/validation';
 import { LoginUserUseCase } from '../../src/application/use-cases/auth/login-user.use-case';
-import { calcularTarifa, categoriaOpcional, ListZonesUseCase } from '../../src/application/use-cases/catalog/catalog.use-cases';
+import { categoriaOpcional, ListZonesUseCase } from '../../src/application/use-cases/catalog/catalog.use-cases';
 import { generarPin, ListClientShipmentsUseCase, TrackShipmentUseCase } from '../../src/application/use-cases/shipments/client-shipments.use-cases';
 import {
   GetLastLocationUseCase,
@@ -42,15 +42,17 @@ describe('validación', () => {
 });
 
 describe('catálogo', () => {
-  it('calcula la tarifa con dos decimales y valida la categoría', () => {
-    expect(calcularTarifa(5000, 34.567)).toBe(39567);
+  it('valida la categoría', () => {
     expect(categoriaOpcional('')).toBeNull();
     expect(categoriaOpcional('Motocarro')).toBe('Motocarro');
     expect(() => categoriaOpcional('Avión')).toThrow(ValidationError);
   });
   it('lista zonas', async () => {
     const z = [{ id_zona: 1, nombre_zona: 'A', tarifa_base: 1 }];
-    expect(await new ListZonesUseCase({ findAll: async () => z, findById: async () => null, updateTarifa: async () => null }).execute()).toBe(z);
+    const repo = { findAll: async () => z, findById: async () => null, updateTarifa: async () => null, create: async () => z[0], update: async () => null };
+    expect(await new ListZonesUseCase(repo).execute()).toEqual([
+      { id_zona: 1, nombre_zona: 'A', tarifa_base: 1, recargo: 1, centro: null, radio_km: 3, activa: true, descripcion: null },
+    ]);
   });
   it('genera PIN de 4 dígitos', () => {
     expect(generarPin(() => 0)).toBe('1000');

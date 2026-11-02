@@ -10,14 +10,23 @@ INSERT INTO Rol (nombre_rol) VALUES
     ('Conductor')
 ON CONFLICT (nombre_rol) DO NOTHING;
 
--- Insertar zonas de tarifa
-INSERT INTO Zona_Tarifa (nombre_zona, tarifa_base) VALUES
-    ('Casco Urbano', 5000.00),
-    ('Vereda Pekín', 8000.00),
-    ('Vereda Novillero', 9000.00),
-    ('Silvania', 12000.00),
-    ('Pasca', 12000.00)
+-- Zonas de cobertura: centro + radio en el mapa y recargo (tarifa_base) en COP.
+-- Un punto pertenece a la zona más pequeña que lo contiene.
+INSERT INTO Zona_Tarifa (nombre_zona, tarifa_base, centro_lat, centro_lon, radio_km, descripcion) VALUES
+    ('Casco Urbano', 0, 4.336500, -74.363800, 3.5, 'Casco urbano de Fusagasugá'),
+    ('Vereda Pekín', 1500, NULL, NULL, 3, 'Vereda de Fusagasugá'),
+    ('Vereda Novillero', 2000, NULL, NULL, 3, 'Vereda de Fusagasugá'),
+    ('Silvania', 2000, 4.403600, -74.388100, 3, 'Municipio vecino (norte)'),
+    ('Pasca', 2000, 4.308600, -74.300600, 3, 'Municipio vecino (oriente)'),
+    ('Rural Fusagasugá', 1500, 4.336500, -74.363800, 12, 'Veredas y fincas a menos de 12 km del centro')
 ON CONFLICT (nombre_zona) DO NOTHING;
+
+-- Tarifas por vehículo (COP)
+INSERT INTO Tarifa_Vehiculo (categoria, banderazo, por_km, por_minuto, minimo) VALUES
+    ('Moto Express', 2000, 700, 50, 4500),
+    ('Motocarro', 4000, 950, 80, 8000),
+    ('Camioneta', 10000, 1600, 120, 18000)
+ON CONFLICT (categoria) DO NOTHING;
 
 -- Usuario administrador inicial
 -- Correo: admin@trackit.com.co  ·  Contraseña: Admin2026*

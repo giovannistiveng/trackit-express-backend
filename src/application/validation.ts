@@ -44,3 +44,20 @@ export function esCorreo(valor: string): boolean {
 export function esContrasenaSegura(valor: string): boolean {
   return valor.length >= 8 && /[A-ZÁÉÍÓÚÑ]/.test(valor) && /\d/.test(valor);
 }
+
+/** Número dentro de un rango; lanza 400 con el nombre del campo. */
+export function numeroEnRango(valor: unknown, campo: string, min: number, max: number): number {
+  const n = typeof valor === 'string' && valor.trim() !== '' ? Number(valor) : valor;
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < min || n > max) {
+    throw new ValidationError(`El campo "${campo}" debe ser un número entre ${min} y ${max}`);
+  }
+  return n;
+}
+
+/** Coordenadas opcionales { lat, lon }; null si no vienen. */
+export function coordenadasOpcionales(valor: unknown, campo: string): { lat: number; lon: number } | null {
+  if (valor === undefined || valor === null || valor === '') return null;
+  if (typeof valor !== 'object') throw new ValidationError(`El campo "${campo}" debe tener lat y lon`);
+  const v = valor as { lat?: unknown; lon?: unknown };
+  return { lat: numeroEnRango(v.lat, `${campo}.lat`, -90, 90), lon: numeroEnRango(v.lon, `${campo}.lon`, -180, 180) };
+}

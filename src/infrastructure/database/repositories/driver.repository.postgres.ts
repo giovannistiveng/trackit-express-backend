@@ -1,3 +1,4 @@
+import { VehicleCategory } from '../../../domain/entities/vehicle.entity';
 import { Pool } from 'pg';
 import { Conductor, EstadoAprobacion } from '../../../domain/entities/driver.entity';
 import { ConductorPostulante, DriverRepositoryPort } from '../../../domain/repositories/driver.repository.port';
@@ -74,6 +75,26 @@ export class DriverRepositoryPostgres implements DriverRepositoryPort {
     );
     const p = r.rows[0]?.promedio;
     return p === null || p === undefined ? null : Number(p);
+  }
+
+  async usuariosDisponibles(categorias: VehicleCategory[]): Promise<number[]> {
+    const r = await this.pool.query<{ id_usuario: number }>(
+      `SELECT DISTINCT c.id_usuario
+       FROM Conductor c
+       JOIN Vehiculo v ON v.id_conductor = c.id_conductor AND v.categoria = ANY($1::text[])
+       WHERE c.estado_aprobacion = 'Aprobado'
+         AND NOT EXISTS (
+           SELECT 1 FROM Envio e
+           JOIN LATERAL (
+             SELECT h.estado FROM Historial_Estado h WHERE h.id_envio = e.id_envio
+             ORDER BY h.fecha_cambio DESC, h.id_historial DESC LIMIT 1
+           ) ult ON TRUE
+           WHERE e.id_conductor = c.id_conductor AND ult.estado IN ('Asignado', 'En Ruta')
+         )
+       LIMIT 100`,
+      [categorias],
+    );
+    return r.rows.map((x) => x.id_usuario);
   }
 
   private mapRow(row: ConductorRow): Conductor {

@@ -54,7 +54,23 @@ CREATE TABLE IF NOT EXISTS Documento_Conductor (
 CREATE TABLE IF NOT EXISTS Zona_Tarifa (
     id_zona SERIAL PRIMARY KEY,
     nombre_zona VARCHAR(100) NOT NULL UNIQUE,
-    tarifa_base DECIMAL(12,2) NOT NULL DEFAULT 0
+    tarifa_base DECIMAL(12,2) NOT NULL DEFAULT 0, -- recargo de la zona (COP)
+    centro_lat DECIMAL(9,6),
+    centro_lon DECIMAL(9,6),
+    radio_km DECIMAL(6,2) NOT NULL DEFAULT 3,
+    activa BOOLEAN NOT NULL DEFAULT TRUE,
+    descripcion VARCHAR(200),
+    CONSTRAINT chk_zona_radio CHECK (radio_km > 0 AND radio_km <= 60)
+);
+
+-- Tabla: Tarifa_Vehiculo (precio = banderazo + km × por_km + min × por_minuto, con mínimo)
+CREATE TABLE IF NOT EXISTS Tarifa_Vehiculo (
+    categoria VARCHAR(50) PRIMARY KEY CHECK (categoria IN ('Moto Express', 'Motocarro', 'Camioneta')),
+    banderazo DECIMAL(10,2) NOT NULL CHECK (banderazo >= 0),
+    por_km DECIMAL(10,2) NOT NULL CHECK (por_km >= 0),
+    por_minuto DECIMAL(10,2) NOT NULL CHECK (por_minuto >= 0),
+    minimo DECIMAL(10,2) NOT NULL CHECK (minimo >= 0),
+    actualizado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tabla: Envio
@@ -75,6 +91,8 @@ CREATE TABLE IF NOT EXISTS Envio (
     destino_lat DECIMAL(9,6),
     destino_lon DECIMAL(9,6),
     distancia_km DECIMAL(8,2),
+    duracion_min INTEGER,
+    desglose JSONB,
     notas VARCHAR(300),
     motivo_cancelacion VARCHAR(255),
     CONSTRAINT fk_envio_cliente FOREIGN KEY (id_cliente) REFERENCES Usuario(id_usuario),

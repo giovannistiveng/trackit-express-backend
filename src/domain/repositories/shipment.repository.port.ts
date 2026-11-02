@@ -38,6 +38,7 @@ export interface ShipmentRepositoryPort {
   findByClient(id_cliente: number, estados?: EstadoEnvio[]): Promise<EnvioDetallado[]>;
   findByDriver(id_conductor: number, estados?: EstadoEnvio[]): Promise<Envio[]>;
   /** Envíos Pendiente sin conductor; si se dan categorías, solo los compatibles. */
+  /** Pendientes sin conductor. Con `categorias`, solo los de esas categorías o sin categoría. */
   findAvailable(categorias?: VehicleCategory[]): Promise<Envio[]>;
   /** Asigna el conductor (solo si el envío no tiene) y registra el estado. */
   updateStatus(id_envio: number, estado: EstadoEnvio, id_conductor?: number): Promise<void>;

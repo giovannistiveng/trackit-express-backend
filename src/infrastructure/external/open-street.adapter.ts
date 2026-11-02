@@ -1,155 +1,246 @@
 import { config } from '../../config';
-import { DistancePort, ResultadoDistancia } from '../../domain/repositories/services.port';
+import { Coordenadas } from '../../domain/entities/shipment.entity';
+import {
+  DistancePort,
+  GeocodingPort,
+  PuntosConocidos,
+  ResultadoDistancia,
+  SugerenciaDireccion,
+} from '../../domain/repositories/services.port';
+import { coordenadasValidas, haversineKm, minutosEstimados } from '../../domain/services/geo';
 import { logger } from '../../shared/logger';
 
 const log = logger.child('OpenStreetMap');
 
-export interface Coordenadas {
-  lat: number;
-  lon: number;
+export type { Coordenadas };
+
+/** Centro de la operación (parque principal de Fusagasugá). */
+export const CENTRO_OPERACION: Coordenadas = { lat: 4.3365, lon: -74.3638 };
+/** Resultados más lejanos que esto se descartan (evita que "Calle 5" caiga en otro país). */
+export const RADIO_MAXIMO_KM = 80;
+/** Caja de búsqueda preferida: provincia del Sumapaz y alrededores (oeste, norte, este, sur). */
+const CAJA_REGION = '-74.75,4.65,-74.0,4.0';
+/** Factor carretera / línea recta cuando OSRM no responde. */
+export const FACTOR_RUTA = 1.35;
+
+const TIEMPO_ESPERA_MS = 7000;
+const VIGENCIA_CACHE_MS = 24 * 60 * 60 * 1000;
+/** Nominatim pide como máximo una petición por segundo. */
+const PAUSA_NOMINATIM_MS = 1100;
+
+type Fetch = typeof fetch;
+
+interface ResultadoNominatim {
+  lat: string;
+  lon: string;
+  display_name: string;
+  name?: string;
+  address?: Record<string, string>;
 }
 
-export class OpenStreetAdapter implements DistancePort {
-  private userAgent: string;
+/** Texto corto a partir de la dirección estructurada de Nominatim. */
+export function nombreCorto(r: ResultadoNominatim): string {
+  const a = r.address ?? {};
+  const via = [a['road'], a['house_number']].filter(Boolean).join(' ');
+  const lugar = r.name && r.name !== a['road'] ? r.name : '';
+  const barrio = a['neighbourhood'] ?? a['suburb'] ?? a['hamlet'] ?? a['village'];
+  const municipio = a['town'] ?? a['city'] ?? a['municipality'] ?? a['county'];
+  const partes = [lugar, via, barrio, municipio].filter((p, i, arr) => p && arr.indexOf(p) === i);
+  return (partes.length ? partes.join(', ') : r.display_name.split(',').slice(0, 3).join(',')).slice(0, 200);
+}
 
-  /** Nominatim exige identificar la aplicación con un contacto (NOMINATIM_CONTACT en .env). */
-  constructor(contacto: string = config.nominatimContacto) {
-    this.userAgent = `TrackIt-Express/2.0 (${contacto})`;
+class CacheTemporal<T> {
+  private readonly datos = new Map<string, { valor: T; vence: number }>();
+  constructor(private readonly max = 500) {}
+
+  obtener(clave: string): T | undefined {
+    const e = this.datos.get(clave);
+    if (!e) return undefined;
+    if (e.vence < Date.now()) {
+      this.datos.delete(clave);
+      return undefined;
+    }
+    return e.valor;
   }
 
-  async calcularDistancia(origen: string, destino: string): Promise<ResultadoDistancia> {
-    // Intentar obtener coordenadas reales de OpenStreetMap
-    let coordsOrigen: Coordenadas | null = null;
-    let coordsDestino: Coordenadas | null = null;
+  guardar(clave: string, valor: T): void {
+    if (this.datos.size >= this.max) this.datos.delete(this.datos.keys().next().value as string);
+    this.datos.set(clave, { valor, vence: Date.now() + VIGENCIA_CACHE_MS });
+  }
+}
 
-    try {
-      coordsOrigen = await this.obtenerCoordenadas(origen);
-    } catch (error) {
-      log.warn(`No se pudo geocodificar el origen "${origen}"`, error);
+/**
+ * OpenStreetMap: Nominatim para buscar direcciones y OSRM para la distancia por carretera.
+ * Si un servicio no responde, se estima con línea recta × 1,35 a 30 km/h.
+ */
+export class OpenStreetAdapter implements DistancePort, GeocodingPort {
+  private readonly userAgent: string;
+  private readonly cacheBusqueda = new CacheTemporal<SugerenciaDireccion[]>();
+  private readonly cacheRuta = new CacheTemporal<{ km: number; segundos: number }>();
+  private cola: Promise<unknown> = Promise.resolve();
+  private ultimaPeticion = 0;
+
+  /** Nominatim exige identificar la aplicación con un contacto (NOMINATIM_CONTACT en .env). */
+  constructor(
+    contacto: string = config.nominatimContacto,
+    private readonly http: Fetch = (...a) => fetch(...a),
+    private readonly urlOsrm = 'https://router.project-osrm.org',
+    private readonly urlNominatim = 'https://nominatim.openstreetmap.org',
+    private readonly pausaMs = PAUSA_NOMINATIM_MS,
+  ) {
+    this.userAgent = `TrackIt-Express/2.1 (${contacto})`;
+  }
+
+  // ------------------------------------------------------------ Geocodificación
+
+  async buscar(texto: string): Promise<SugerenciaDireccion[]> {
+    const q = texto.trim().replace(/\s+/g, ' ');
+    if (q.length < 3) return [];
+    const clave = q.toLowerCase();
+    const enCache = this.cacheBusqueda.obtener(clave);
+    if (enCache) return enCache;
+
+    // 1) Dentro de la región; 2) en Cundinamarca; 3) en Colombia. Siempre cerca del centro.
+    const intentos: Record<string, string>[] = [
+      { q, viewbox: CAJA_REGION, bounded: '1' },
+      { q: /cundinamarca|colombia/i.test(q) ? q : `${q}, Cundinamarca` },
+    ];
+    let resultados: SugerenciaDireccion[] = [];
+    for (const extra of intentos) {
+      const crudos = await this.nominatim('/search', { format: 'jsonv2', addressdetails: '1', limit: '6', countrycodes: 'co', ...extra });
+      resultados = (Array.isArray(crudos) ? (crudos as ResultadoNominatim[]) : [])
+        .map((r) => ({ nombre: nombreCorto(r), detalle: r.display_name, coords: { lat: Number(r.lat), lon: Number(r.lon) } }))
+        .filter((s) => coordenadasValidas(s.coords) && haversineKm(CENTRO_OPERACION, s.coords) <= RADIO_MAXIMO_KM);
+      if (resultados.length > 0) break;
     }
+    const unicos = resultados.filter((s, i, arr) => arr.findIndex((o) => o.nombre === s.nombre) === i).slice(0, 5);
+    this.cacheBusqueda.guardar(clave, unicos);
+    return unicos;
+  }
 
-    try {
-      coordsDestino = await this.obtenerCoordenadas(destino);
-    } catch (error) {
-      log.warn(`No se pudo geocodificar el destino "${destino}"`, error);
-    }
+  async inversa(punto: Coordenadas): Promise<SugerenciaDireccion | null> {
+    const r = await this.nominatim('/reverse', {
+      format: 'jsonv2',
+      addressdetails: '1',
+      zoom: '18',
+      lat: String(punto.lat),
+      lon: String(punto.lon),
+    });
+    const uno = r as ResultadoNominatim | null;
+    if (!uno || typeof uno.display_name !== 'string') return null;
+    return { nombre: nombreCorto(uno), detalle: uno.display_name, coords: { lat: punto.lat, lon: punto.lon } };
+  }
 
-    // Si ambas coordenadas se obtuvieron, usar distancia real
+  // ------------------------------------------------------------ Distancia
+
+  async calcularDistancia(origen: string, destino: string, conocidos: PuntosConocidos = {}): Promise<ResultadoDistancia> {
+    const [coordsOrigen, coordsDestino] = await Promise.all([
+      coordenadasValidas(conocidos.origen) ? conocidos.origen : this.geocodificar(origen),
+      coordenadasValidas(conocidos.destino) ? conocidos.destino : this.geocodificar(destino),
+    ]);
+
     if (coordsOrigen && coordsDestino) {
-      const distanciaKm = this.calcularHaversine(coordsOrigen, coordsDestino);
-      const velocidadPromedioKmh = 30;
-      const duracionHoras = distanciaKm / velocidadPromedioKmh;
-      const duracionSegundos = duracionHoras * 3600;
-
-      log.debug(`Distancia real "${origen}" → "${destino}": ${distanciaKm.toFixed(2)} km`);
+      const ruta = await this.rutaPorCarretera(coordsOrigen, coordsDestino);
       return {
-        distancia_km: Math.round(distanciaKm * 100) / 100,
-        duracion_segundos: Math.round(duracionSegundos),
+        distancia_km: Math.round(ruta.km * 100) / 100,
+        duracion_segundos: Math.round(ruta.segundos),
         origen: coordsOrigen,
         destino: coordsDestino,
         exacta: true,
       };
     }
 
-    // FALLBACK: distancia simulada basada en las direcciones
-    const distanciaSimulada = this.calcularDistanciaSimulada(origen, destino);
+    const km = this.distanciaSimulada(origen, destino);
     log.warn(
-      `Usando distancia simulada (${distanciaSimulada} km) para "${origen}" → "${destino}": ` +
+      `Distancia estimada (${km} km) para "${origen}" → "${destino}": ` +
         `origen ${coordsOrigen ? 'ok' : 'sin coordenadas'}, destino ${coordsDestino ? 'ok' : 'sin coordenadas'}`,
     );
-    const duracionSegundos = Math.round(distanciaSimulada * 120); // ~2 min por km
-
     return {
-      distancia_km: distanciaSimulada,
-      duracion_segundos: duracionSegundos,
+      distancia_km: km,
+      duracion_segundos: minutosEstimados(km / FACTOR_RUTA) * 60,
       origen: coordsOrigen,
       destino: coordsDestino,
       exacta: false,
     };
   }
 
-  private async obtenerCoordenadas(direccion: string): Promise<Coordenadas | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000); // 8 segundos timeout
+  private async geocodificar(texto: string): Promise<Coordenadas | null> {
+    const [primera] = await this.buscar(texto);
+    return primera?.coords ?? null;
+  }
 
+  /** Distancia y tiempo por carretera con OSRM; si falla, línea recta × factor. */
+  private async rutaPorCarretera(a: Coordenadas, b: Coordenadas): Promise<{ km: number; segundos: number }> {
+    const clave = [a.lat, a.lon, b.lat, b.lon].map((n) => n.toFixed(5)).join(',');
+    const enCache = this.cacheRuta.obtener(clave);
+    if (enCache) return enCache;
+    const rectaKm = haversineKm(a, b);
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion)}&limit=1`;
+      const url = `${this.urlOsrm}/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false&alternatives=false`;
+      const r = await this.conTiempo(url, {});
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = (await r.json()) as { code?: string; routes?: { distance: number; duration: number }[] };
+      const ruta = data.routes?.[0];
+      if (data.code !== 'Ok' || !ruta) throw new Error(data.code ?? 'sin ruta');
+      // OSRM usa velocidades de carro; un domicilio real en la región va algo más lento.
+      const resultado = { km: ruta.distance / 1000, segundos: Math.max(ruta.duration * 1.25, 60) };
+      this.cacheRuta.guardar(clave, resultado);
+      return resultado;
+    } catch (e) {
+      log.warn(`OSRM no respondió (${e instanceof Error ? e.message : String(e)}); se estima con línea recta`);
+      const km = Math.max(0.3, rectaKm * FACTOR_RUTA);
+      return { km, segundos: minutosEstimados(rectaKm) * 60 };
+    }
+  }
 
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': this.userAgent,
-          'Accept-Language': 'es',
-        },
-      });
+  // ------------------------------------------------------------ HTTP
 
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        throw new Error(`Error en Nominatim: ${response.status}`);
-      }
-
-      const data = (await response.json()) as Array<{ lat: string; lon: string }>;
-
-      if (!Array.isArray(data) || data.length === 0) {
-        log.debug(`Nominatim no encontró resultados para "${direccion}"`);
+  private async nominatim(ruta: string, params: Record<string, string>): Promise<unknown> {
+    const url = `${this.urlNominatim}${ruta}?${new URLSearchParams(params).toString()}`;
+    // Serializa las llamadas para respetar el límite de Nominatim
+    const turno = this.cola.then(async () => {
+      const espera = this.ultimaPeticion + this.pausaMs - Date.now();
+      if (espera > 0) await new Promise((r) => setTimeout(r, espera));
+      this.ultimaPeticion = Date.now();
+      try {
+        const r = await this.conTiempo(url, { 'User-Agent': this.userAgent, 'Accept-Language': 'es' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as unknown;
+      } catch (e) {
+        log.warn(`Fallo consultando Nominatim (${ruta}): ${e instanceof Error ? e.message : String(e)}`);
         return null;
       }
+    });
+    this.cola = turno.catch(() => undefined);
+    return turno;
+  }
 
-      return {
-        lat: parseFloat(data[0].lat),
-        lon: parseFloat(data[0].lon),
-      };
-    } catch (error) {
-      clearTimeout(timeout);
-      const motivo =
-        error instanceof Error
-          ? error.name === 'AbortError'
-            ? 'tiempo de espera agotado (8 s)'
-            : error.message
-          : String(error);
-      log.warn(`Fallo consultando Nominatim para "${direccion}": ${motivo}`);
-      return null;
+  private async conTiempo(url: string, headers: Record<string, string>): Promise<Response> {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), TIEMPO_ESPERA_MS);
+    try {
+      return await this.http(url, { headers, signal: controller.signal });
+    } finally {
+      clearTimeout(t);
     }
   }
 
-  private calcularHaversine(p1: Coordenadas, p2: Coordenadas): number {
-    const R = 6371; // Radio de la Tierra en km
-    const dLat = this.toRad(p2.lat - p1.lat);
-    const dLon = this.toRad(p2.lon - p1.lon);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(this.toRad(p1.lat)) * Math.cos(this.toRad(p2.lat)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-
-  private toRad(grados: number): number {
-    return grados * (Math.PI / 180);
-  }
-
-  private calcularDistanciaSimulada(origen: string, destino: string): number {
-    const direcciones: Record<string, number> = {
-      'casco urbano': 2.5,
-      'vereda pekín': 8.5,
-      'vereda novillero': 12.0,
-      'silvania': 35.0,
-      'pasca': 45.0,
-      'bogotá': 55.0,
+  /** Último recurso cuando no se encontró alguna dirección: distancias típicas desde el centro. */
+  private distanciaSimulada(origen: string, destino: string): number {
+    const lugares: Record<string, number> = {
+      'casco urbano': 0,
+      'vereda pekín': 6,
+      'vereda novillero': 7,
+      chinauta: 12,
+      silvania: 13,
+      pasca: 14,
+      arbeláez: 20,
     };
-
-    const origenLower = origen.toLowerCase();
-    const destinoLower = destino.toLowerCase();
-
-    let distanciaOrigen = 5;
-    let distanciaDestino = 5;
-
-    for (const [clave, distancia] of Object.entries(direcciones)) {
-      if (origenLower.includes(clave)) distanciaOrigen = distancia;
-      if (destinoLower.includes(clave)) distanciaDestino = distancia;
-    }
-
-    return Math.abs(distanciaOrigen - distanciaDestino) + 2;
+    const lejania = (texto: string) => {
+      const t = texto.toLowerCase();
+      const hallado = Object.entries(lugares).find(([clave]) => t.includes(clave));
+      return hallado ? hallado[1] : 1.5;
+    };
+    return Math.round((Math.abs(lejania(origen) - lejania(destino)) + 3) * 100) / 100;
   }
 }

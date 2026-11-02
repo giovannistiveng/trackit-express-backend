@@ -107,11 +107,32 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
 
     // Zonas y cotización (CU-005)
     const zonas = await request(app).get('/api/zonas').set(auth(cliente.token));
-    expect(zonas.body).toHaveLength(5);
-    const cot = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Casco Urbano', destino: 'Silvania', id_zona: 1 });
-    expect(cot.body).toMatchObject({ distancia_km: 34.5, tarifa_base: 5000, tarifa_total: 39500, moneda: 'COP' });
+    expect(zonas.body).toHaveLength(6);
+    // 34,5 km y 69 min en Moto Express: 2.000 + 24.150 + 3.450 = 29.600 + recargo Silvania 2.000 → 31.600
+    const cot = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Casco Urbano', destino: 'Silvania' });
+    expect(cot.body).toMatchObject({
+      distancia_km: 34.5,
+      tarifa_base: 2000,
+      tarifa_total: 31600,
+      moneda: 'COP',
+      categoria: 'Moto Express',
+      zona: { nombre_zona: 'Silvania' },
+      zona_origen: { nombre_zona: 'Casco Urbano' },
+      recargo_nocturno_activo: false,
+      desglose: { banderazo: 2000, distancia: 24150, tiempo: 3450, recargo_zona: 2000, recargo_nocturno: 0, total: 31600 },
+    });
+    expect(cot.body.opciones).toEqual([
+      { categoria: 'Moto Express', tarifa_total: 31600, minimo_aplicado: false },
+      { categoria: 'Motocarro', tarifa_total: 44300, minimo_aplicado: false },
+      { categoria: 'Camioneta', tarifa_total: 75500, minimo_aplicado: false },
+    ]);
     expect((await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Pasca', destino: 'pasca', id_zona: 1 })).status).toBe(400);
-    expect((await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Pasca', destino: 'Silvania', id_zona: 99 })).status).toBe(404);
+    const fuera = await request(app)
+      .post('/api/cotizar/cotizar')
+      .set(auth(cliente.token))
+      .send({ origen: 'Fusagasugá', destino: 'Bogotá', destino_coords: { lat: 4.711, lon: -74.0721 } });
+    expect(fuera.status).toBe(400);
+    expect(fuera.body.error).toMatch(/fuera de nuestra zona de cobertura/);
 
     // Crear envío (CU-006): el cliente sale del token
     const crear = await request(app)
@@ -120,7 +141,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
       .send({ origen: 'Casco Urbano', destino: 'Silvania', tipo_carga: 'Documentos', id_zona: 1, categoria: 'Moto Express' });
     expect(crear.status).toBe(201);
     const envio = crear.body.envio;
-    expect(envio).toMatchObject({ estado: 'Pendiente', tarifa: 39500, id_cliente: cliente.id, categoria: 'Moto Express' });
+    expect(envio).toMatchObject({ estado: 'Pendiente', tarifa: 31600, id_cliente: cliente.id, categoria: 'Moto Express' });
     expect(envio.pin_seguridad).toMatch(/^\d{4}$/);
     const suplantar = await request(app).post('/api/envios/crear').set(auth(cliente.token)).send({ origen: 'A1b', destino: 'B2c', tipo_carga: 'x', id_zona: 1, id_cliente: otroCliente.id });
     expect(suplantar.status).toBe(403);
@@ -256,8 +277,8 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
 
     // Administración: métricas y auditoría
     const met = await request(app).get('/api/admin/dashboard/metrics').set(auth(admin.token));
-    expect(met.body).toMatchObject({ enviosTotales: 2, entregados: 1, enviosActivos: 1, ingresosCop: 39500, calificacionPromedio: 4, conductoresAprobados: 1 });
-    expect(met.body.porZona).toHaveLength(5);
+    expect(met.body).toMatchObject({ enviosTotales: 2, entregados: 1, enviosActivos: 1, ingresosCop: 31600, calificacionPromedio: 4, conductoresAprobados: 1 });
+    expect(met.body.porZona).toHaveLength(6);
     expect(met.body.porEstado.map((e: { estado: string }) => e.estado)).toEqual(['Pendiente', 'Asignado', 'En Ruta', 'Entregado', 'Cancelado']);
     const aud = await request(app).get('/api/admin/auditoria?tamano=5').set(auth(admin.token));
     expect(aud.body.total).toBeGreaterThan(10);
@@ -271,19 +292,32 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     expect(lejos.body.total).toBeGreaterThan(10);
   });
 
-  conBd('un envío con categoría solo lo ve y acepta un conductor con ese vehículo', async () => {
+  conBd('un envío con categoría lo ven los conductores con ese vehículo o uno más grande', async () => {
     const cliente = await sesion(app, 'cat-cli@t.co', 2);
     const conductor = await sesion(app, 'cat-con@t.co', 3);
+    const camionero = await sesion(app, 'cat-cam@t.co', 3);
     const admin = await sesionAdmin(app);
     const me = (await request(app).get('/api/conductores/me').set(auth(conductor.token))).body;
+    const meCam = (await request(app).get('/api/conductores/me').set(auth(camionero.token))).body;
     await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: me.id_conductor, approved: true });
-    await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: 'XYZ123', categoria: 'Camioneta' });
-    const moto = (await request(app).post('/api/envios/crear').set(auth(cliente.token)).send({ origen: 'Casco', destino: 'Pasca', tipo_carga: 'Documentos', id_zona: 5, categoria: 'Moto Express' })).body.envio;
-    const libre = (await request(app).post('/api/envios/crear').set(auth(cliente.token)).send({ origen: 'Casco', destino: 'Pasca', tipo_carga: 'Documentos', id_zona: 5 })).body.envio;
-    const ids = (await request(app).get('/api/conductores/envios/disponibles').set(auth(conductor.token))).body.envios.map((e: { id_envio: number }) => e.id_envio);
-    expect(ids).toContain(libre.id_envio);
-    expect(ids).not.toContain(moto.id_envio);
-    expect((await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: moto.id_envio })).body.error).toBe('Este envío requiere un vehículo Moto Express');
+    await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: meCam.id_conductor, approved: true });
+    await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: 'XYZ123', categoria: 'Moto Express' });
+    await request(app).post('/api/vehicles/register').set(auth(camionero.token)).send({ placa: 'CAM456', categoria: 'Camioneta' });
+    const crear = (categoria?: string) =>
+      request(app).post('/api/envios/crear').set(auth(cliente.token)).send({ origen: 'Casco', destino: 'Pasca', tipo_carga: 'Documentos', ...(categoria ? { categoria } : {}) });
+    const grande = (await crear('Camioneta')).body.envio;
+    const moto = (await crear('Moto Express')).body.envio;
+    const libre = (await crear()).body.envio;
+    const ver = async (token: string) =>
+      (await request(app).get('/api/conductores/envios/disponibles').set(auth(token))).body.envios.map((e: { id_envio: number }) => e.id_envio);
+    const ids = await ver(conductor.token);
+    expect(ids).toEqual(expect.arrayContaining([libre.id_envio, moto.id_envio]));
+    expect(ids).not.toContain(grande.id_envio);
+    expect(await ver(camionero.token)).toEqual(expect.arrayContaining([libre.id_envio, moto.id_envio, grande.id_envio]));
+    expect((await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: grande.id_envio })).body.error).toBe('Este envío requiere un vehículo Camioneta');
+    // Los conductores aprobados reciben el aviso de servicio nuevo
+    const avisos = (await request(app).get('/api/notificaciones').set(auth(camionero.token))).body.items;
+    expect(avisos.some((n: { tipo: string; id_envio: number }) => n.tipo === 'nuevo_servicio' && n.id_envio === grande.id_envio)).toBe(true);
     expect((await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: libre.id_envio, id_conductor: me.id_conductor + 100 })).status).toBe(403);
     expect((await request(app).post('/api/envios/crear').set(auth(cliente.token)).send({ origen: 'Casco', destino: 'Pasca', tipo_carga: 'x', id_zona: 5, categoria: 'Avión' })).status).toBe(400);
   });

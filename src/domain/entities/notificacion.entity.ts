@@ -6,6 +6,7 @@ export const TIPOS_NOTIFICACION = [
   'conductor_aprobado',
   'conductor_rechazado',
   'calificacion_recibida',
+  'nuevo_servicio',
 ] as const;
 export type TipoNotificacion = (typeof TIPOS_NOTIFICACION)[number];
 

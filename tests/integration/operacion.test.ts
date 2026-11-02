@@ -48,10 +48,22 @@ describe('Sitio público', () => {
   conBd('estadísticas y zonas sin sesión', async () => {
     const est = await request(app).get('/api/publico/estadisticas');
     expect(est.status).toBe(200);
-    expect(est.body).toEqual({ enviosEntregados: 0, conductoresActivos: 0, zonasCubiertas: 5, calificacionPromedio: 0 });
+    expect(est.body).toEqual({ enviosEntregados: 0, conductoresActivos: 0, zonasCubiertas: 6, calificacionPromedio: 0 });
     const zonas = await request(app).get('/api/publico/zonas');
-    expect(zonas.body).toHaveLength(5);
-    expect(zonas.body[0]).toEqual({ id_zona: 1, nombre_zona: 'Casco Urbano', tarifa_base: 5000 });
+    expect(zonas.body).toHaveLength(6);
+    expect(zonas.body[0]).toEqual({
+      id_zona: 1,
+      nombre_zona: 'Casco Urbano',
+      tarifa_base: 0,
+      recargo: 0,
+      centro: { lat: 4.3365, lon: -74.3638 },
+      radio_km: 3.5,
+      activa: true,
+      descripcion: 'Casco urbano de Fusagasugá',
+    });
+    const tarifas = await request(app).get('/api/publico/tarifas');
+    expect(tarifas.body.tarifas).toHaveLength(3);
+    expect(tarifas.body).toMatchObject({ recargo_nocturno: 0.2, horario_nocturno: '20:00 a 5:59' });
   });
 
   conBd('formulario de contacto: valida, guarda y el administrador lo atiende', async () => {
@@ -148,7 +160,7 @@ describe('Seguimiento, notificaciones, reputación y ganancias', () => {
 
     // El tablero muestra la ganancia del conductor (80 % de la tarifa)
     const tablero = (await request(app).get('/api/conductores/envios/disponibles').set(auth(conductor.token))).body.envios;
-    expect(tablero.find((e: { id_envio: number }) => e.id_envio === envio.id_envio).ganancia_conductor).toBe(31600);
+    expect(tablero.find((e: { id_envio: number }) => e.id_envio === envio.id_envio).ganancia_conductor).toBe(25280);
 
     // Seguimiento antes de aceptar: sin recorrido ni ETA
     const s0 = (await request(app).get(`/api/envios/${envio.id_envio}/seguimiento`).set(auth(cliente.token))).body;
@@ -194,34 +206,73 @@ describe('Seguimiento, notificaciones, reputación y ganancias', () => {
     expect((await request(app).post('/api/notificaciones/leer-todas').set(auth(cliente.token))).body).toEqual({ marcadas: 2 });
     // El conductor recibió la aprobación y la calificación
     const avisosCon = (await request(app).get('/api/notificaciones').set(auth(conductor.token))).body.items;
-    expect(avisosCon.map((a: { tipo: string }) => a.tipo)).toEqual(['calificacion_recibida', 'conductor_aprobado']);
+    expect(avisosCon.map((a: { tipo: string }) => a.tipo)).toEqual(['calificacion_recibida', 'nuevo_servicio', 'conductor_aprobado']);
     expect(avisosCon[0].mensaje).toContain('Muy puntual');
 
     // Historial y resumen del conductor
     const historial = (await request(app).get('/api/conductores/envios/historial').set(auth(conductor.token))).body.envios;
-    expect(historial[0]).toMatchObject({ id_envio: envio.id_envio, estado: 'Entregado', calificacion: 5, comentario: 'Muy puntual', ganancia_conductor: 31600 });
+    expect(historial[0]).toMatchObject({ id_envio: envio.id_envio, estado: 'Entregado', calificacion: 5, comentario: 'Muy puntual', ganancia_conductor: 25280 });
     expect(historial[0].pin_seguridad).toBeUndefined();
     const resumen = (await request(app).get('/api/conductores/me/resumen').set(auth(conductor.token))).body;
-    expect(resumen).toEqual({ completados: 1, ingresos_total: 31600, ingresos_mes: 31600, calificacion_promedio: 5, total_calificaciones: 1, servicio_activo: null });
+    expect(resumen).toEqual({ completados: 1, ingresos_total: 25280, ingresos_mes: 25280, calificacion_promedio: 5, total_calificaciones: 1, servicio_activo: null });
     expect((await request(app).get('/api/conductores/me/resumen').set(auth(cliente.token))).status).toBe(403);
 
     // Panel de administración: búsqueda de envíos y tarifa de zona
     const todos = await request(app).get('/api/admin/envios?tamano=50').set(auth(admin.token));
     expect(todos.body.total).toBeGreaterThanOrEqual(1);
     const porId = await request(app).get(`/api/admin/envios?texto=${envio.id_envio}`).set(auth(admin.token));
-    expect(porId.body.items[0]).toMatchObject({ id_envio: envio.id_envio, cliente: { nombre: 'Marta Díaz', correo: 'segui@t.co' }, conductor_nombre: 'Camilo Rojas', zona: 'Casco Urbano' });
+    expect(porId.body.items[0]).toMatchObject({ id_envio: envio.id_envio, cliente: { nombre: 'Marta Díaz', correo: 'segui@t.co' }, conductor_nombre: 'Camilo Rojas', zona: 'Silvania' });
     expect(porId.body.items[0].pin_seguridad).toBeUndefined();
-    const entregados = await request(app).get('/api/admin/envios?estado=Entregado&id_zona=1').set(auth(admin.token));
+    const entregados = await request(app).get('/api/admin/envios?estado=Entregado&id_zona=4').set(auth(admin.token));
     expect(entregados.body.items.every((e: { estado: string }) => e.estado === 'Entregado')).toBe(true);
     expect((await request(app).get('/api/admin/envios?estado=Raro').set(auth(admin.token))).status).toBe(400);
     expect((await request(app).get('/api/admin/envios').set(auth(cliente.token))).status).toBe(403);
 
     expect((await request(app).put('/api/admin/zonas/1').set(auth(admin.token)).send({ tarifa_base: -5 })).status).toBe(400);
     expect((await request(app).put('/api/admin/zonas/99').set(auth(admin.token)).send({ tarifa_base: 6000 })).status).toBe(404);
-    const zona = await request(app).put('/api/admin/zonas/1').set(auth(admin.token)).send({ tarifa_base: 6000 });
-    expect(zona.body.zona).toEqual({ id_zona: 1, nombre_zona: 'Casco Urbano', tarifa_base: 6000 });
-    const cot2 = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Casco Urbano', destino: 'Silvania', id_zona: 1 });
-    expect(cot2.body.tarifa_total).toBe(40500);
+    expect((await request(app).put('/api/admin/zonas/4').set(auth(admin.token)).send({})).status).toBe(400);
+    const zona = await request(app).put('/api/admin/zonas/4').set(auth(admin.token)).send({ tarifa_base: 6000 });
+    expect(zona.body.zona).toMatchObject({ id_zona: 4, nombre_zona: 'Silvania', tarifa_base: 6000, recargo: 6000 });
+    const cot2 = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Casco Urbano', destino: 'Silvania' });
+    expect(cot2.body.tarifa_total).toBe(35600);
+
+    // Zonas: crear, editar en el mapa y desactivar
+    const malaZona = await request(app).post('/api/admin/zonas').set(auth(admin.token)).send({ nombre_zona: 'X' });
+    expect(malaZona.status).toBe(400);
+    const sinCentro = await request(app).post('/api/admin/zonas').set(auth(admin.token)).send({ nombre_zona: 'Chinauta', recargo: 3000 });
+    expect(sinCentro.body.error).toBe('Indica el centro de la zona en el mapa');
+    const nueva = await request(app)
+      .post('/api/admin/zonas')
+      .set(auth(admin.token))
+      .send({ nombre_zona: 'Chinauta', recargo: 3000, centro: { lat: 4.27, lon: -74.41 }, radio_km: 2.5, descripcion: 'Condominios' });
+    expect(nueva.status).toBe(201);
+    expect(nueva.body.zona).toMatchObject({ nombre_zona: 'Chinauta', recargo: 3000, radio_km: 2.5, activa: true, centro: { lat: 4.27, lon: -74.41 } });
+    expect((await request(app).post('/api/admin/zonas').set(auth(admin.token)).send({ nombre_zona: 'Chinauta', centro: { lat: 4.27, lon: -74.41 } })).status).toBe(400);
+    const dest = { lat: 4.271, lon: -74.411 };
+    const aChinauta = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Centro', destino: 'Chinauta', destino_coords: dest });
+    expect(aChinauta.body.zona.nombre_zona).toBe('Chinauta');
+    const idNueva = nueva.body.zona.id_zona;
+    const apagada = await request(app).put(`/api/admin/zonas/${idNueva}`).set(auth(admin.token)).send({ activa: false, radio_km: 4 });
+    expect(apagada.body.zona).toMatchObject({ activa: false, radio_km: 4 });
+    expect((await request(app).put(`/api/admin/zonas/${idNueva}`).set(auth(admin.token)).send({ activa: 'no' })).status).toBe(400);
+    expect((await request(app).put(`/api/admin/zonas/${idNueva}`).set(auth(admin.token)).send({ radio_km: 100 })).status).toBe(400);
+    expect((await request(app).put(`/api/admin/zonas/${idNueva}`).set(auth(admin.token)).send({ nombre_zona: 'Pasca' })).status).toBe(400);
+    const todas = (await request(app).get('/api/admin/zonas').set(auth(admin.token))).body;
+    expect(todas.find((z: { id_zona: number }) => z.id_zona === idNueva).activa).toBe(false);
+    expect((await request(app).get('/api/zonas').set(auth(cliente.token))).body.some((z: { id_zona: number }) => z.id_zona === idNueva)).toBe(false);
+    // Desactivada, el punto cae en el área rural
+    const rural = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Centro', destino: 'Chinauta', destino_coords: dest });
+    expect(rural.body.zona.nombre_zona).toBe('Rural Fusagasugá');
+
+    // Tarifas por vehículo
+    expect((await request(app).put('/api/admin/tarifas/Avi%C3%B3n').set(auth(admin.token)).send({})).status).toBe(400);
+    expect((await request(app).put('/api/admin/tarifas/Motocarro').set(auth(admin.token)).send({ banderazo: -1, por_km: 1, por_minuto: 1, minimo: 1 })).status).toBe(400);
+    const t = await request(app).put('/api/admin/tarifas/Moto%20Express').set(auth(admin.token)).send({ banderazo: 3000, por_km: 800, por_minuto: 0, minimo: 6000 });
+    expect(t.body.tarifa).toEqual({ categoria: 'Moto Express', banderazo: 3000, por_km: 800, por_minuto: 0, minimo: 6000 });
+    // 3.000 + 34,5 × 800 = 30.600 + recargo 6.000 = 36.600
+    const cot3 = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Casco Urbano', destino: 'Silvania', categoria: 'Moto Express' });
+    expect(cot3.body.tarifa_total).toBe(36600);
+    expect((await request(app).put('/api/admin/tarifas/Motocarro').set(auth(cliente.token)).send({})).status).toBe(403);
 
     // Las cifras públicas reflejan la operación
     const met = await request(app).get('/api/admin/dashboard/metrics').set(auth(admin.token));

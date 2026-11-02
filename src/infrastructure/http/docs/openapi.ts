@@ -50,6 +50,42 @@ export const openApiSpec = {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
     schemas: {
       Error: { type: 'object', properties: { error: { type: 'string' }, statusCode: { type: 'integer' } }, required: ['error'] },
+      Desglose: {
+        type: 'object',
+        description: 'Partidas del precio en COP',
+        properties: {
+          categoria: { type: 'string' },
+          banderazo: { type: 'number' },
+          distancia: { type: 'number' },
+          tiempo: { type: 'number' },
+          recargo_zona: { type: 'number' },
+          recargo_nocturno: { type: 'number' },
+          minimo_aplicado: { type: 'boolean' },
+          total: { type: 'number' },
+        },
+      },
+      TarifaVehiculo: {
+        type: 'object',
+        required: ['banderazo', 'por_km', 'por_minuto', 'minimo'],
+        properties: {
+          categoria: { type: 'string', enum: ['Moto Express', 'Motocarro', 'Camioneta'] },
+          banderazo: { type: 'number', minimum: 0 },
+          por_km: { type: 'number', minimum: 0 },
+          por_minuto: { type: 'number', minimum: 0 },
+          minimo: { type: 'number', minimum: 0 },
+        },
+      },
+      ZonaEntrada: {
+        type: 'object',
+        properties: {
+          nombre_zona: { type: 'string', minLength: 2, maxLength: 100 },
+          recargo: { type: 'number', minimum: 0, maximum: 200000 },
+          centro: { type: 'object', properties: { lat: { type: 'number' }, lon: { type: 'number' } } },
+          radio_km: { type: 'number', minimum: 0.2, maximum: 60 },
+          activa: { type: 'boolean' },
+          descripcion: { type: 'string', maxLength: 200 },
+        },
+      },
       Usuario: {
         type: 'object',
         properties: { id: { type: 'integer' }, nombre: { type: 'string' }, correo: { type: 'string' }, rol: { type: 'string', enum: ['1', '2', '3'] } },
@@ -215,29 +251,97 @@ export const openApiSpec = {
       post: {
         tags: ['Catálogo'],
         summary: 'Cotizar un envío (CU-005) · Cliente',
-        description: 'tarifa_total = tarifa_base de la zona + distancia_km × 1.000 COP. La distancia es estimada (OpenStreetMap).',
+        description:
+          'Precio = banderazo + km × valor_km + minutos × valor_minuto del vehículo (nunca menos del mínimo) + recargo de la zona + 20 % nocturno (20:00–5:59). ' +
+          'La zona se detecta por las coordenadas del origen y el destino (se cobra el mayor recargo). Distancia y tiempo por carretera (OpenStreetMap/OSRM). ' +
+          'Sin coordenadas del destino hay que enviar id_zona. Se redondea a múltiplos de 100 COP.',
         security: seguro,
-        requestBody: { required: true, content: json({ type: 'object', required: ['origen', 'destino', 'id_zona'], properties: { origen: { type: 'string' }, destino: { type: 'string' }, id_zona: { type: 'integer' } } }, { origen: 'Casco Urbano', destino: 'Silvania', id_zona: 1 }) },
+        requestBody: {
+          required: true,
+          content: json(
+            {
+              type: 'object',
+              required: ['origen', 'destino'],
+              properties: {
+                origen: { type: 'string' },
+                destino: { type: 'string' },
+                origen_coords: coords,
+                destino_coords: coords,
+                categoria: { type: 'string', enum: ['Moto Express', 'Motocarro', 'Camioneta'] },
+                id_zona: { type: 'integer', description: 'Solo si el destino no tiene coordenadas' },
+              },
+            },
+            { origen: 'Parque principal, Fusagasugá', destino: 'Silvania', origen_coords: { lat: 4.3365, lon: -74.3638 }, categoria: 'Moto Express' },
+          ),
+        },
         responses: {
           '200': {
-            description: 'Cotización',
-            content: json({
-              type: 'object',
-              properties: {
-                distancia_km: { type: 'number' },
-                tarifa_base: { type: 'number' },
-                tarifa_total: { type: 'number' },
-                moneda: { type: 'string' },
-                duracion_estimada_min: { type: 'integer' },
-                distancia_exacta: { type: 'boolean', description: 'false si alguna dirección no se encontró en el mapa' },
+            description: 'Cotización con desglose y precio por vehículo',
+            content: json(
+              {
+                type: 'object',
+                properties: {
+                  distancia_km: { type: 'number' },
+                  tarifa_base: { type: 'number', description: 'Recargo de zona aplicado' },
+                  tarifa_total: { type: 'number' },
+                  moneda: { type: 'string' },
+                  duracion_estimada_min: { type: 'integer' },
+                  distancia_exacta: { type: 'boolean', description: 'false si alguna dirección no se encontró en el mapa' },
+                  categoria: { type: 'string' },
+                  zona: { type: 'object', properties: { id_zona: { type: 'integer' }, nombre_zona: { type: 'string' } } },
+                  zona_origen: { type: 'object', nullable: true },
+                  desglose: ref('Desglose'),
+                  opciones: { type: 'array', items: { type: 'object', properties: { categoria: { type: 'string' }, tarifa_total: { type: 'number' }, minimo_aplicado: { type: 'boolean' } } } },
+                  recargo_nocturno_activo: { type: 'boolean' },
+                  origen_coords: coords,
+                  destino_coords: coords,
+                },
               },
-            }),
+              {
+                distancia_km: 14.5,
+                tarifa_base: 2000,
+                tarifa_total: 15400,
+                moneda: 'COP',
+                duracion_estimada_min: 25,
+                distancia_exacta: true,
+                categoria: 'Moto Express',
+                zona: { id_zona: 4, nombre_zona: 'Silvania' },
+                desglose: { categoria: 'Moto Express', banderazo: 2000, distancia: 10150, tiempo: 1250, recargo_zona: 2000, recargo_nocturno: 0, minimo_aplicado: false, total: 15400 },
+                opciones: [
+                  { categoria: 'Moto Express', tarifa_total: 15400, minimo_aplicado: false },
+                  { categoria: 'Motocarro', tarifa_total: 22000, minimo_aplicado: false },
+                  { categoria: 'Camioneta', tarifa_total: 38200, minimo_aplicado: false },
+                ],
+                recargo_nocturno_activo: false,
+              },
+            ),
           },
-          '400': E400(),
+          '400': E400('La dirección de destino está fuera de nuestra zona de cobertura'),
           '401': E401,
           '403': E403,
           '404': E404('No existe la zona de tarifa con id 9'),
         },
+      },
+    },
+    '/api/geo/buscar': {
+      get: {
+        tags: ['Catálogo'],
+        summary: 'Autocompletar direcciones dentro de la región (máx. 80 km de Fusagasugá)',
+        security: seguro,
+        parameters: [{ name: 'q', in: 'query', required: true, schema: { type: 'string', minLength: 3, maxLength: 120 } }],
+        responses: { '200': { description: '{ resultados: [{ nombre, detalle, coords }] }' }, '400': E400(), '401': E401, '429': error('Demasiadas búsquedas', 'Demasiadas peticiones') },
+      },
+    },
+    '/api/geo/inversa': {
+      get: {
+        tags: ['Catálogo'],
+        summary: 'Dirección aproximada de unas coordenadas ("Usar mi ubicación" o punto en el mapa)',
+        security: seguro,
+        parameters: [
+          { name: 'lat', in: 'query', required: true, schema: { type: 'number' } },
+          { name: 'lon', in: 'query', required: true, schema: { type: 'number' } },
+        ],
+        responses: { '200': { description: '{ resultado: { nombre, detalle, coords } | null }' }, '400': E400(), '401': E401 },
       },
     },
     '/api/envios/crear': {
@@ -251,12 +355,14 @@ export const openApiSpec = {
           content: json(
             {
               type: 'object',
-              required: ['origen', 'destino', 'tipo_carga', 'id_zona'],
+              required: ['origen', 'destino', 'tipo_carga'],
               properties: {
                 origen: { type: 'string' },
                 destino: { type: 'string' },
                 tipo_carga: { type: 'string', maxLength: 80 },
-                id_zona: { type: 'integer' },
+                id_zona: { type: 'integer', description: 'Solo si el destino no tiene coordenadas' },
+                origen_coords: coords,
+                destino_coords: coords,
                 categoria: ref('Categoria'),
                 notas: { type: 'string', maxLength: 300, description: 'Indicaciones para el conductor' },
               },
@@ -506,14 +612,35 @@ export const openApiSpec = {
         responses: { '200': { description: '{ items, total, pagina, tamano }' }, '400': E400('Filtro de estado inválido'), '401': E401, '403': E403 },
       },
     },
+    '/api/admin/zonas': {
+      get: { tags: ['Administración'], summary: 'Todas las zonas, incluidas las desactivadas', security: seguro, responses: { '200': { description: 'Zonas' }, '401': E401, '403': E403 } },
+      post: {
+        tags: ['Administración'],
+        summary: 'Crear una zona de cobertura (círculo en el mapa)',
+        security: seguro,
+        requestBody: { required: true, content: json(ref('ZonaEntrada'), { nombre_zona: 'Chinauta', recargo: 2000, centro: { lat: 4.27, lon: -74.44 }, radio_km: 3, descripcion: 'Zona turística' }) },
+        responses: { '201': { description: 'Zona creada' }, '400': E400('Indica el centro de la zona en el mapa'), '401': E401, '403': E403 },
+      },
+    },
     '/api/admin/zonas/{id}': {
       put: {
         tags: ['Administración'],
-        summary: 'Cambiar la tarifa base de una zona',
+        summary: 'Editar una zona: nombre, recargo, centro, radio, descripción o activa',
+        description: 'Todos los campos son opcionales. `tarifa_base` se acepta como alias de `recargo`.',
         security: seguro,
         parameters: [idPath('id_zona')],
-        requestBody: { required: true, content: json({ type: 'object', required: ['tarifa_base'], properties: { tarifa_base: { type: 'number', minimum: 0 } } }, { tarifa_base: 6000 }) },
+        requestBody: { required: true, content: json(ref('ZonaEntrada'), { recargo: 2500, activa: true }) },
         responses: { '200': { description: 'Zona actualizada' }, '400': E400(), '401': E401, '403': E403, '404': E404() },
+      },
+    },
+    '/api/admin/tarifas/{categoria}': {
+      put: {
+        tags: ['Administración'],
+        summary: 'Cambiar los valores de cobro de un tipo de vehículo',
+        security: seguro,
+        parameters: [{ name: 'categoria', in: 'path', required: true, schema: { type: 'string', enum: ['Moto Express', 'Motocarro', 'Camioneta'] } }],
+        requestBody: { required: true, content: json(ref('TarifaVehiculo'), { banderazo: 2000, por_km: 700, por_minuto: 50, minimo: 4500 }) },
+        responses: { '200': { description: 'Tarifa actualizada' }, '400': E400(), '401': E401, '403': E403 },
       },
     },
     '/api/admin/contactos': {
@@ -544,7 +671,22 @@ export const openApiSpec = {
       },
     },
     '/api/publico/zonas': {
-      get: { tags: ['Sitio público'], summary: 'Zonas de cobertura con su tarifa base', responses: { '200': { description: 'Zonas' } } },
+      get: { tags: ['Sitio público'], summary: 'Zonas de cobertura activas (centro, radio y recargo)', responses: { '200': { description: 'Zonas' } } },
+    },
+    '/api/publico/tarifas': {
+      get: {
+        tags: ['Sitio público'],
+        summary: 'Tarifas por vehículo y reglas de recargo',
+        responses: {
+          '200': {
+            description: 'Cómo se calcula el precio',
+            content: json(
+              { type: 'object', properties: { tarifas: { type: 'array', items: ref('TarifaVehiculo') }, recargo_nocturno: { type: 'number' }, horario_nocturno: { type: 'string' } } },
+              { tarifas: [{ categoria: 'Moto Express', banderazo: 2000, por_km: 700, por_minuto: 50, minimo: 4500 }], recargo_nocturno: 0.2, horario_nocturno: '20:00 a 5:59' },
+            ),
+          },
+        },
+      },
     },
     '/api/contacto': {
       post: {

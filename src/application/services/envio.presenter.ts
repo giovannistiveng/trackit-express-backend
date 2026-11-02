@@ -1,3 +1,4 @@
+import { DesgloseTarifa } from '../../domain/services/tarifas';
 import { Envio, EnvioDetallado, gananciaConductor } from '../../domain/entities/shipment.entity';
 import { HistorialEstadoRow } from '../../domain/repositories/shipment.repository.port';
 
@@ -15,6 +16,8 @@ export interface EnvioApi {
   categoria?: string | null;
   fecha_creacion?: string;
   distancia_km?: number | null;
+  duracion_min?: number | null;
+  desglose?: DesgloseTarifa | null;
   notas?: string | null;
   motivo_cancelacion?: string | null;
   origen_coords?: { lat: number; lon: number } | null;
@@ -54,6 +57,8 @@ export function presentarEnvio(envio: Envio | EnvioDetallado, o: OpcionesPresent
     id_zona: envio.id_zona,
     categoria: envio.categoria ?? null,
     distancia_km: envio.distancia_km ?? null,
+    duracion_min: envio.duracion_min ?? null,
+    desglose: envio.desglose ?? null,
     notas: envio.notas ?? null,
     origen_coords: envio.origen_coords ?? null,
     destino_coords: envio.destino_coords ?? null,

@@ -1,3 +1,4 @@
+import { presentarZona } from '../catalog/catalog.use-cases';
 import { ASUNTOS_CONTACTO, AsuntoContacto } from '../../../domain/entities/contacto.entity';
 import { EstadisticasPublicas } from '../../../domain/entities/metricas.entity';
 import { ContactRepositoryPort } from '../../../domain/repositories/contact.repository.port';
@@ -30,7 +31,7 @@ export class ListPublicZonesUseCase {
   constructor(private readonly zonas: ZonaTarifaRepositoryPort) {}
 
   async execute() {
-    return (await this.zonas.findAll()).map((z) => ({ id_zona: z.id_zona as number, nombre_zona: z.nombre_zona, tarifa_base: z.tarifa_base }));
+    return (await this.zonas.findAll()).map(presentarZona);
   }
 }
 

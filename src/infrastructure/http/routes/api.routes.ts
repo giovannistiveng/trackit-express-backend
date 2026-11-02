@@ -35,6 +35,9 @@ export function crearRutasApi(c: Contenedor): Router {
   r.get('/publico/zonas', async (_req: Request, res: Response) => {
     res.json(await c.publico.zonas.execute());
   });
+  r.get('/publico/tarifas', async (_req: Request, res: Response) => {
+    res.json(await c.catalogo.tarifas.execute());
+  });
   r.post('/contacto', rateLimit(5, 60_000), async (req: Request, res: Response) => {
     const r2 = await c.publico.contacto.execute(req.body ?? {});
     res.status(201).json({ message: 'Recibimos tu mensaje. Te responderemos pronto.', ...r2 });
@@ -69,8 +72,13 @@ export function crearRutasApi(c: Contenedor): Router {
 
   // --- Catálogo ---
   r.get('/zonas', auth, async (_req: Request, res: Response) => {
-    const zonas = await c.catalogo.zonas.execute();
-    res.json(zonas.map((z) => ({ id_zona: z.id_zona, nombre_zona: z.nombre_zona, tarifa_base: z.tarifa_base })));
+    res.json(await c.catalogo.zonas.execute());
+  });
+  r.get('/geo/buscar', auth, rateLimit(60, 60_000), async (req: Request, res: Response) => {
+    res.json({ resultados: await c.catalogo.buscarDireccion.execute(req.query.q) });
+  });
+  r.get('/geo/inversa', auth, rateLimit(30, 60_000), async (req: Request, res: Response) => {
+    res.json({ resultado: await c.catalogo.direccionDe.execute(req.query.lat, req.query.lon) });
   });
   r.post('/cotizar/cotizar', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
     const cotizacion = await c.catalogo.cotizar.execute(req.body ?? {});
@@ -171,8 +179,17 @@ export function crearRutasApi(c: Contenedor): Router {
   r.get('/admin/envios', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     res.json(await c.admin.envios.execute(actorDe(req), req.query));
   });
+  r.get('/admin/zonas', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    res.json(await c.admin.zonas.execute(actorDe(req)));
+  });
+  r.post('/admin/zonas', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    res.status(201).json({ message: 'Zona creada', zona: await c.admin.crearZona.execute(actorDe(req), req.body ?? {}) });
+  });
+  r.put('/admin/tarifas/:categoria', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    res.json({ message: 'Tarifa actualizada', tarifa: await c.admin.tarifaVehiculo.execute(actorDe(req), req.params.categoria, req.body ?? {}) });
+  });
   r.put('/admin/zonas/:id', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
-    res.json({ message: 'Tarifa actualizada', zona: await c.admin.tarifa.execute(actorDe(req), req.params.id, req.body ?? {}) });
+    res.json({ message: 'Zona actualizada', zona: await c.admin.tarifa.execute(actorDe(req), req.params.id, req.body ?? {}) });
   });
   r.get('/admin/contactos', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     res.json(await c.admin.contactos.execute(actorDe(req), req.query));

@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { Envio, EnvioDetallado, EstadoEnvio } from '../../../domain/entities/shipment.entity';
 import { VehicleCategory } from '../../../domain/entities/vehicle.entity';
+import { DesgloseTarifa } from '../../../domain/services/tarifas';
 import {
   EnvioAdmin,
   FiltroEnviosAdmin,
@@ -29,6 +30,8 @@ interface EnvioRow {
   destino_lat?: string | number | null;
   destino_lon?: string | number | null;
   distancia_km?: string | number | null;
+  duracion_min?: number | null;
+  desglose?: DesgloseTarifa | null;
   notas?: string | null;
   motivo_cancelacion?: string | null;
   estado: EstadoEnvio;
@@ -67,8 +70,8 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
       await client.query('BEGIN');
       const result = await client.query<EnvioRow>(
         `INSERT INTO Envio (origen, destino, tipo_carga, tarifa, pin_seguridad, id_cliente, id_zona, categoria,
-                            origen_lat, origen_lon, destino_lat, destino_lon, distancia_km, notas)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                            origen_lat, origen_lon, destino_lat, destino_lon, distancia_km, notas, duracion_min, desglose)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING *`,
         [
           envio.origen,
@@ -85,6 +88,8 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
           envio.destino_coords?.lon ?? null,
           envio.distancia_km ?? null,
           envio.notas ?? null,
+          envio.duracion_min ?? null,
+          envio.desglose ? JSON.stringify(envio.desglose) : null,
         ],
       );
       const row = result.rows[0];
@@ -150,7 +155,7 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
        WHERE t.estado = 'Pendiente' AND t.id_conductor IS NULL
          AND ($1::text[] IS NULL OR t.categoria IS NULL OR t.categoria = ANY($1::text[]))
        ORDER BY t.id_envio DESC`,
-      [categorias && categorias.length > 0 ? categorias : null],
+      [categorias ?? null],
     );
     return result.rows.map((row) => this.mapRow(row));
   }
@@ -347,6 +352,8 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
       origen_coords: coords(row.origen_lat, row.origen_lon),
       destino_coords: coords(row.destino_lat, row.destino_lon),
       distancia_km: row.distancia_km === null || row.distancia_km === undefined ? null : Number(row.distancia_km),
+      duracion_min: row.duracion_min ?? null,
+      desglose: row.desglose ?? null,
       notas: row.notas ?? null,
       motivo_cancelacion: row.motivo_cancelacion ?? null,
       estado: row.estado,

@@ -1,5 +1,6 @@
 import { Conductor, EstadoAprobacion } from '../entities/driver.entity';
 import { DocumentoConductor } from '../entities/documento-conductor.entity';
+import { VehicleCategory } from '../entities/vehicle.entity';
 
 export interface ConductorPostulante extends Conductor {
   documentos: Pick<DocumentoConductor, 'tipo_documento' | 'url_archivo'>[];
@@ -14,4 +15,6 @@ export interface DriverRepositoryPort {
   /** Conductores Pendiente o Rechazado, con el último documento de cada tipo. */
   listApplicants(): Promise<ConductorPostulante[]>;
   averageRating(id_conductor: number): Promise<number | null>;
+  /** id_usuario de conductores aprobados, sin servicio activo, con algún vehículo de estas categorías. */
+  usuariosDisponibles(categorias: VehicleCategory[]): Promise<number[]>;
 }

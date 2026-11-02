@@ -1,3 +1,4 @@
+import type { DesgloseTarifa } from '../services/tarifas';
 import { VehicleCategory } from './vehicle.entity';
 
 export type TipoCarga = 'Documentos' | 'Mercancía General' | 'Carga Pesada' | 'Acarreo';
@@ -39,6 +40,9 @@ export interface Envio {
   origen_coords?: Coordenadas | null;
   destino_coords?: Coordenadas | null;
   distancia_km?: number | null;
+  duracion_min?: number | null;
+  /** Partidas de la tarifa (banderazo, distancia, tiempo, recargos). */
+  desglose?: DesgloseTarifa | null;
   /** Indicaciones del cliente para el conductor (portería, a quién entregar…). */
   notas?: string | null;
   motivo_cancelacion?: string | null;

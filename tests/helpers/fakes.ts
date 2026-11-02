@@ -123,6 +123,9 @@ export class FakeDrivers implements DriverRepositoryPort {
   async averageRating() {
     return null;
   }
+  async usuariosDisponibles() {
+    return this.conductores.filter((c) => c.estado_aprobacion === 'Aprobado').map((c) => c.id_usuario);
+  }
 }
 
 export class FakeVehicles implements VehicleRepositoryPort {

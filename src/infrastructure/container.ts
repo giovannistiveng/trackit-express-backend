@@ -4,7 +4,10 @@ import { Logger } from '../shared/logger';
 import { AuditService } from '../application/services/audit.service';
 import { LoginUserUseCase } from '../application/use-cases/auth/login-user.use-case';
 import { RegisterUserUseCase } from '../application/use-cases/auth/register-user.use-case';
-import { ListZonesUseCase, QuoteShipmentUseCase } from '../application/use-cases/catalog/catalog.use-cases';
+import { ListZonesUseCase,
+  ListVehicleTariffsUseCase,
+  SearchAddressUseCase,
+  ReverseGeocodeUseCase, QuoteShipmentUseCase } from '../application/use-cases/catalog/catalog.use-cases';
 import { NotificationService } from '../application/services/notification.service';
 import {
   CancelShipmentUseCase,
@@ -39,7 +42,10 @@ import {
   ResolveContactUseCase,
   SearchAuditUseCase,
   SearchShipmentsAdminUseCase,
-  UpdateZoneTariffUseCase,
+  UpdateZoneUseCase,
+  ListZonesAdminUseCase,
+  CreateZoneUseCase,
+  UpdateVehicleTariffUseCase,
 } from '../application/use-cases/admin/admin.use-cases';
 import { ChangePasswordUseCase, GetMyProfileUseCase, UpdateMyProfileUseCase } from '../application/use-cases/users/user.use-cases';
 import {
@@ -51,7 +57,7 @@ import {
 import { GetPublicStatsUseCase, ListPublicZonesUseCase, SubmitContactUseCase } from '../application/use-cases/public/public.use-cases';
 import { ContactRepositoryPostgres } from './database/repositories/contact.repository.postgres';
 import { NotificationRepositoryPostgres } from './database/repositories/notification.repository.postgres';
-import { DistancePort, PasswordHasherPort, TokenServicePort } from '../domain/repositories/services.port';
+import { DistancePort, GeocodingPort, PasswordHasherPort, TokenServicePort } from '../domain/repositories/services.port';
 import { StoragePort } from '../domain/repositories/storage.port';
 import { AuditRepositoryPostgres } from './database/repositories/audit.repository.postgres';
 import { DocumentoConductorRepositoryPostgres } from './database/repositories/documento-conductor.repository.postgres';
@@ -65,6 +71,8 @@ import { ZonaTarifaRepositoryPostgres } from './database/repositories/zona-tarif
 import { CloudinaryStorage, cloudinaryConfigurado } from './external/cloudinary.adapter';
 import { LocalDiskStorage } from './external/local-disk.storage';
 import { OpenStreetAdapter } from './external/open-street.adapter';
+import { TarifaVehiculoRepositoryPostgres } from './database/repositories/tarifa-vehiculo.repository.postgres';
+import { Cotizador } from '../application/services/cotizador';
 import { HashService } from './security/hash.service';
 import { JWTService } from './security/jwt.service';
 
@@ -75,6 +83,9 @@ export interface Dependencias {
   tokens?: TokenServicePort;
   hasher?: PasswordHasherPort;
   distancia?: DistancePort;
+  geocodificador?: GeocodingPort;
+  /** Hora actual (las pruebas la fijan para que el recargo nocturno no dependa del reloj). */
+  reloj?: () => Date;
   storage?: StoragePort;
 }
 
@@ -82,7 +93,9 @@ export interface Dependencias {
 export function crearContenedor(d: Dependencias) {
   const tokens = d.tokens ?? new JWTService();
   const hasher = d.hasher ?? new HashService();
-  const distancia = d.distancia ?? new OpenStreetAdapter();
+  const osm = new OpenStreetAdapter();
+  const distancia = d.distancia ?? osm;
+  const geocodificador = d.geocodificador ?? osm;
   const storage =
     d.storage ??
     (cloudinaryConfigurado(config.cloudinary) ? new CloudinaryStorage(config.cloudinary) : new LocalDiskStorage(config.uploadsDir, config.publicUrl));
@@ -99,6 +112,8 @@ export function crearContenedor(d: Dependencias) {
   const notificaciones = new NotificationService(notificacionesRepo, (e) => d.log.child('Notificaciones').warn('No se pudo crear la notificación', e));
   const metricas = new MetricsRepositoryPostgres(d.pool);
   const contactos = new ContactRepositoryPostgres(d.pool);
+  const tarifas = new TarifaVehiculoRepositoryPostgres(d.pool);
+  const cotizador = new Cotizador(zonas, tarifas, distancia, d.reloj);
 
   return {
     tokens,
@@ -109,10 +124,13 @@ export function crearContenedor(d: Dependencias) {
     },
     catalogo: {
       zonas: new ListZonesUseCase(zonas),
-      cotizar: new QuoteShipmentUseCase(zonas, distancia),
+      cotizar: new QuoteShipmentUseCase(cotizador),
+      tarifas: new ListVehicleTariffsUseCase(tarifas),
+      buscarDireccion: new SearchAddressUseCase(geocodificador),
+      direccionDe: new ReverseGeocodeUseCase(geocodificador),
     },
     envios: {
-      crear: new CreateShipmentUseCase(envios, zonas, distancia, audit),
+      crear: new CreateShipmentUseCase(envios, cotizador, audit, drivers, notificaciones),
       delCliente: new ListClientShipmentsUseCase(envios),
       rastrear: new TrackShipmentUseCase(envios, drivers, vehiculos),
       calificar: new RateShipmentUseCase(envios, drivers, audit, notificaciones),
@@ -156,7 +174,10 @@ export function crearContenedor(d: Dependencias) {
       metricas: new GetDashboardMetricsUseCase(metricas),
       auditoria: new SearchAuditUseCase(new AuditRepositoryPostgres(d.pool)),
       envios: new SearchShipmentsAdminUseCase(envios),
-      tarifa: new UpdateZoneTariffUseCase(zonas, audit),
+      tarifa: new UpdateZoneUseCase(zonas, audit),
+      zonas: new ListZonesAdminUseCase(zonas),
+      crearZona: new CreateZoneUseCase(zonas, audit),
+      tarifaVehiculo: new UpdateVehicleTariffUseCase(tarifas, audit),
       contactos: new ListContactsUseCase(contactos),
       atenderContacto: new ResolveContactUseCase(contactos, audit),
     },

@@ -9,7 +9,7 @@ import { logger } from '../../src/shared/logger';
 import { crearContenedor } from '../../src/infrastructure/container';
 import { crearApp } from '../../src/infrastructure/http/app';
 import { LocalDiskStorage } from '../../src/infrastructure/external/local-disk.storage';
-import { DistancePort } from '../../src/domain/repositories/services.port';
+import { DistancePort, GeocodingPort } from '../../src/domain/repositories/services.port';
 
 export const DIR_UPLOADS = path.join(os.tmpdir(), 'trackit-test-uploads');
 
@@ -17,9 +17,24 @@ export const DIR_UPLOADS = path.join(os.tmpdir(), 'trackit-test-uploads');
 export const FUSA = { lat: 4.3369, lon: -74.3638 };
 export const SILVANIA = { lat: 4.4033, lon: -74.3878 };
 
+/** 12:00 en Colombia: sin recargo nocturno. */
+export const MEDIODIA = new Date('2026-10-29T17:00:00Z');
+
+/** Búsqueda de direcciones fija: las pruebas no dependen de Nominatim. */
+export const geocodificadorFijo: GeocodingPort = {
+  buscar: async (q: string) => (/silvania/i.test(q) ? [{ nombre: 'Silvania', detalle: 'Silvania, Cundinamarca', coords: SILVANIA }] : []),
+  inversa: async (p) => ({ nombre: 'Parque principal, Fusagasugá', detalle: 'Fusagasugá', coords: p }),
+};
+
 /** Distancia fija: las pruebas no dependen de OpenStreetMap. */
 export const distanciaFija: DistancePort = {
-  calcularDistancia: async () => ({ distancia_km: 34.5, duracion_segundos: 4140, origen: FUSA, destino: SILVANIA, exacta: true }),
+  calcularDistancia: async (_o, _d, conocidos = {}) => ({
+    distancia_km: 34.5,
+    duracion_segundos: 4140,
+    origen: conocidos.origen ?? FUSA,
+    destino: conocidos.destino ?? SILVANIA,
+    exacta: true,
+  }),
 };
 
 /** ¿Hay una base de datos de pruebas disponible? */
@@ -47,6 +62,8 @@ export function crearAppPrueba() {
     pool,
     log: logger,
     distancia: distanciaFija,
+    geocodificador: geocodificadorFijo,
+    reloj: () => MEDIODIA,
     storage: new LocalDiskStorage(DIR_UPLOADS, 'http://localhost:3000'),
   });
   return crearApp({ contenedor, log: logger, salud: async () => (await pool.query('SELECT 1'), true) });

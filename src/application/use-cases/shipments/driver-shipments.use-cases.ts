@@ -1,6 +1,7 @@
 import { Actor, ROLES } from '../../../domain/entities/actor.entity';
 import { ESTADOS_ACTIVOS_CONDUCTOR, Envio } from '../../../domain/entities/shipment.entity';
 import { haversineKm, minutosEstimados } from '../../../domain/services/geo';
+import { categoriasAtendibles, puedeAtender } from '../../../domain/services/tarifas';
 import { DriverRepositoryPort } from '../../../domain/repositories/driver.repository.port';
 import { LocationRepositoryPort } from '../../../domain/repositories/location.repository.port';
 import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
@@ -35,8 +36,8 @@ export class ListAvailableShipmentsUseCase {
 
   async execute(actor: Actor): Promise<EnvioApi[]> {
     const c = await conductorAprobado(this.drivers, actor);
-    const categorias = (await this.vehicles.findByDriverId(c.id_conductor)).map((v) => v.categoria);
-    const lista = await this.envios.findAvailable(categorias);
+    const vehiculos = (await this.vehicles.findByDriverId(c.id_conductor)).map((v) => v.categoria);
+    const lista = await this.envios.findAvailable(categoriasAtendibles(vehiculos));
     return lista.map((e) => presentarEnvio(e, { incluirPin: false, vistaConductor: true }));
   }
 }
@@ -78,8 +79,8 @@ export class AcceptShipmentUseCase {
     if (activos.length > 0) throw new ValidationError('Ya tienes un servicio activo. Termínalo antes de aceptar otro');
 
     if (envio.categoria) {
-      const categorias = (await this.vehicles.findByDriverId(c.id_conductor)).map((v) => v.categoria);
-      if (!categorias.includes(envio.categoria)) {
+      const vehiculos = (await this.vehicles.findByDriverId(c.id_conductor)).map((v) => v.categoria);
+      if (!puedeAtender(vehiculos, envio.categoria)) {
         throw new ValidationError(`Este envío requiere un vehículo ${envio.categoria}`);
       }
     }

@@ -4,7 +4,7 @@ import path from 'path';
 import express from 'express';
 import multer from 'multer';
 import request from 'supertest';
-import { OpenStreetAdapter } from '../../src/infrastructure/external/open-street.adapter';
+import { OpenStreetAdapter, nombreCorto } from '../../src/infrastructure/external/open-street.adapter';
 import { LocalDiskStorage } from '../../src/infrastructure/external/local-disk.storage';
 import { CloudinaryStorage, cloudinaryConfigurado } from '../../src/infrastructure/external/cloudinary.adapter';
 import { JWTService } from '../../src/infrastructure/security/jwt.service';
@@ -29,34 +29,83 @@ jest.mock('cloudinary', () => ({
 const logMudo = new Logger({ dir: os.tmpdir(), level: 'ERROR', retentionDays: 0, toConsole: false });
 
 describe('OpenStreetAdapter', () => {
-  const original = global.fetch;
-  afterEach(() => {
-    global.fetch = original;
-  });
-
   const respuesta = (datos: unknown, ok = true) => ({ ok, status: ok ? 200 : 503, json: async () => datos }) as Response;
+  const FUSA = { lat: '4.3369', lon: '-74.3638', display_name: 'Parque, Fusagasugá, Cundinamarca', name: 'Parque principal', address: { road: 'Carrera 6', town: 'Fusagasugá' } };
+  const SILV = { lat: '4.4040', lon: '-74.3870', display_name: 'Silvania, Cundinamarca', address: { town: 'Silvania' } };
+  const MEXICO = { lat: '19.43', lon: '-99.13', display_name: 'Calle 5, Ciudad de México' };
 
-  it('usa Haversine cuando geocodifica origen y destino', async () => {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce(respuesta([{ lat: '4.3369', lon: '-74.3638' }]))
-      .mockResolvedValueOnce(respuesta([{ lat: '4.4040', lon: '-74.3870' }])) as unknown as typeof fetch;
-    const r = await new OpenStreetAdapter().calcularDistancia('Fusagasugá', 'Silvania');
-    expect(r.distancia_km).toBeGreaterThan(7);
-    expect(r.distancia_km).toBeLessThan(9);
-    expect(r.duracion_segundos).toBeGreaterThan(0);
+  /** fetch falso que responde según la URL. */
+  function servidor(rutas: { nominatim?: (url: string) => unknown; osrm?: (url: string) => unknown }) {
+    return jest.fn(async (url: string) => {
+      if (url.includes('/route/v1/')) {
+        const r = rutas.osrm?.(url);
+        if (r instanceof Error) throw r;
+        return respuesta(r ?? {}, r !== undefined);
+      }
+      const r = rutas.nominatim?.(url);
+      if (r instanceof Error) throw r;
+      return respuesta(r ?? [], r !== undefined);
+    });
+  }
+  const crear = (f: ReturnType<typeof servidor>) => new OpenStreetAdapter('test@t.co', f as unknown as typeof fetch, 'https://osrm', 'https://nom', 0);
+
+  it('busca dentro de la región, descarta resultados lejanos y arma un nombre corto', async () => {
+    const f = servidor({ nominatim: (u) => (u.includes('bounded=1') ? [MEXICO, FUSA, FUSA] : []) });
+    const geo = crear(f);
+    const r = await geo.buscar('  parque   principal ');
+    expect(r).toEqual([{ nombre: 'Parque principal, Carrera 6, Fusagasugá', detalle: FUSA.display_name, coords: { lat: 4.3369, lon: -74.3638 } }]);
+    expect(f.mock.calls[0][0]).toContain('countrycodes=co');
+    // Segunda vez sale de la caché
+    await geo.buscar('Parque Principal');
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(await geo.buscar('ab')).toEqual([]);
   });
 
-  it('usa distancia simulada si Nominatim no encuentra, falla o responde error', async () => {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce(respuesta([]))
-      .mockResolvedValueOnce(respuesta({}, false)) as unknown as typeof fetch;
-    expect((await new OpenStreetAdapter().calcularDistancia('Casco Urbano', 'Silvania')).distancia_km).toBe(34.5);
-    global.fetch = jest.fn().mockRejectedValue(Object.assign(new Error('abort'), { name: 'AbortError' })) as unknown as typeof fetch;
-    expect((await new OpenStreetAdapter().calcularDistancia('Pasca', 'Bogotá')).distancia_km).toBe(12);
-    global.fetch = jest.fn().mockRejectedValue('texto') as unknown as typeof fetch;
-    expect((await new OpenStreetAdapter().calcularDistancia('X', 'Y')).distancia_km).toBe(2);
+  it('si no hay resultados en la región, reintenta en Cundinamarca', async () => {
+    const f = servidor({ nominatim: (u) => (u.includes('Cundinamarca') ? [SILV] : []) });
+    const r = await crear(f).buscar('Silvania');
+    expect(r[0]).toMatchObject({ nombre: 'Silvania' });
+    expect(f).toHaveBeenCalledTimes(2);
+    const otra = servidor({ nominatim: () => [] });
+    expect(await crear(otra).buscar('Vereda Cundinamarca')).toEqual([]);
+    expect(otra).toHaveBeenCalledTimes(2);
+  });
+
+  it('dirección inversa', async () => {
+    const f = servidor({ nominatim: () => FUSA });
+    expect(await crear(f).inversa({ lat: 4.3, lon: -74.3 })).toMatchObject({ nombre: 'Parque principal, Carrera 6, Fusagasugá', coords: { lat: 4.3, lon: -74.3 } });
+    expect(await crear(servidor({ nominatim: () => ({ error: 'Unable to geocode' }) })).inversa({ lat: 0, lon: 0 })).toBeNull();
+  });
+
+  it('usa la distancia por carretera de OSRM con las coordenadas conocidas', async () => {
+    const f = servidor({ osrm: () => ({ code: 'Ok', routes: [{ distance: 11200, duration: 960 }] }) });
+    const r = await crear(f).calcularDistancia('A', 'B', { origen: { lat: 4.3369, lon: -74.3638 }, destino: { lat: 4.404, lon: -74.387 } });
+    expect(r).toMatchObject({ distancia_km: 11.2, duracion_segundos: 1200, exacta: true });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls[0][0]).toBe('https://osrm/route/v1/driving/-74.3638,4.3369;-74.387,4.404?overview=false&alternatives=false');
+  });
+
+  it('geocodifica el texto y, si OSRM falla, estima con línea recta × 1,35', async () => {
+    const f = servidor({ nominatim: (u) => (/Silvania/.test(u) ? [SILV] : [FUSA]), osrm: () => new Error('caído') });
+    const r = await crear(f).calcularDistancia('Parque', 'Silvania');
+    expect(r.exacta).toBe(true);
+    expect(r.distancia_km).toBeGreaterThan(10);
+    expect(r.distancia_km).toBeLessThan(11.5);
+    const sinRuta = servidor({ nominatim: (u) => (/Silvania/.test(u) ? [SILV] : [FUSA]), osrm: () => ({ code: 'NoRoute', routes: [] }) });
+    expect((await crear(sinRuta).calcularDistancia('Parque', 'Silvania')).exacta).toBe(true);
+  });
+
+  it('usa una distancia estimada si no encuentra alguna dirección', async () => {
+    const vacio = servidor({});
+    expect(await crear(vacio).calcularDistancia('Casco Urbano', 'Silvania')).toMatchObject({ distancia_km: 16, exacta: false });
+    const caido = jest.fn().mockRejectedValue(Object.assign(new Error('abort'), { name: 'AbortError' }));
+    expect((await crear(caido as never).calcularDistancia('Pasca', 'Chinauta')).distancia_km).toBe(5);
+    const raro = jest.fn().mockRejectedValue('texto');
+    expect((await crear(raro as never).calcularDistancia('X', 'Y')).distancia_km).toBe(3);
+  });
+
+  it('nombreCorto usa display_name si no hay dirección', () => {
+    expect(nombreCorto({ lat: '1', lon: '1', display_name: 'A, B, C, D' })).toBe('A, B, C');
   });
 });
 
