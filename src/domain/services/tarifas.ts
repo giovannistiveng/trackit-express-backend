@@ -10,6 +10,8 @@ export const HORA_INICIO_NOCHE = 20;
 export const HORA_FIN_NOCHE = 6;
 /** Los precios se redondean hacia arriba a múltiplos de 100 COP. */
 export const REDONDEO_COP = 100;
+/** Recargo por cada parada intermedia (el conductor se detiene, entrega o recoge y sigue). */
+export const RECARGO_PARADA = 1500;
 /** Cuando el cliente no elige vehículo se cotiza con el más económico. */
 export const CATEGORIA_POR_DEFECTO: VehicleCategory = 'Moto Express';
 
@@ -48,6 +50,10 @@ export interface DesgloseTarifa {
   distancia: number;
   tiempo: number;
   recargo_zona: number;
+  /** Paradas intermedias y su recargo. */
+  paradas: number;
+  recargo_paradas: number;
+  ida_y_vuelta: boolean;
   recargo_nocturno: number;
   /** true si el total subió hasta la tarifa mínima del vehículo. */
   minimo_aplicado: boolean;
@@ -60,28 +66,44 @@ export interface DatosTarifa {
   minutos: number;
   recargoZona: number;
   fecha?: Date;
+  paradas?: number;
+  idaYVuelta?: boolean;
 }
 
 const redondear = (v: number) => Math.ceil(v / REDONDEO_COP) * REDONDEO_COP;
 
 /** Calcula el precio de un viaje con su desglose. Todas las partidas quedan en pesos enteros. */
-export function calcularTarifaDetallada({ tarifa, distanciaKm, minutos, recargoZona, fecha = new Date() }: DatosTarifa): DesgloseTarifa {
+export function calcularTarifaDetallada({
+  tarifa,
+  distanciaKm,
+  minutos,
+  recargoZona,
+  fecha = new Date(),
+  paradas = 0,
+  idaYVuelta = false,
+}: DatosTarifa): DesgloseTarifa {
   const banderazo = Math.round(tarifa.banderazo);
   const distancia = Math.round(Math.max(0, distanciaKm) * tarifa.por_km);
   const tiempo = Math.round(Math.max(0, minutos) * tarifa.por_minuto);
   const recargo_zona = Math.round(Math.max(0, recargoZona));
+  const nParadas = Math.max(0, Math.floor(paradas));
+  const recargo_paradas = nParadas * RECARGO_PARADA;
   const base = banderazo + distancia + tiempo;
   const conMinimo = Math.max(base, tarifa.minimo);
-  const recargo_nocturno = esNocturno(fecha) ? Math.round((conMinimo + recargo_zona) * RECARGO_NOCTURNO) : 0;
+  const subtotal = conMinimo + recargo_zona + recargo_paradas;
+  const recargo_nocturno = esNocturno(fecha) ? Math.round(subtotal * RECARGO_NOCTURNO) : 0;
   return {
     categoria: tarifa.categoria,
     banderazo,
     distancia,
     tiempo,
     recargo_zona,
+    paradas: nParadas,
+    recargo_paradas,
+    ida_y_vuelta: idaYVuelta,
     recargo_nocturno,
     minimo_aplicado: base < tarifa.minimo,
-    total: redondear(conMinimo + recargo_zona + recargo_nocturno),
+    total: redondear(subtotal + recargo_nocturno),
   };
 }
 

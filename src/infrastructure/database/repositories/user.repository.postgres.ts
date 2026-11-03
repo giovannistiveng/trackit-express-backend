@@ -11,6 +11,7 @@ interface UsuarioRow {
   id_rol: number;
   telefono?: string | null;
   fecha_registro?: Date;
+  correo_verificado?: boolean;
 }
 
 export class UserRepositoryPostgres implements UserRepositoryPort {
@@ -63,6 +64,10 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
     await this.pool.query('UPDATE Usuario SET password_hash = $1 WHERE id_usuario = $2', [passwordHash, id]);
   }
 
+  async markEmailVerified(id: number): Promise<void> {
+    await this.pool.query('UPDATE Usuario SET correo_verificado = TRUE WHERE id_usuario = $1', [id]);
+  }
+
   private mapRow(row: UsuarioRow): User {
     return {
       id: row.id_usuario,
@@ -72,6 +77,7 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
       id_rol: row.id_rol,
       telefono: row.telefono ?? null,
       fecha_registro: row.fecha_registro ? new Date(row.fecha_registro) : undefined,
+      correo_verificado: row.correo_verificado ?? true,
     };
   }
 }

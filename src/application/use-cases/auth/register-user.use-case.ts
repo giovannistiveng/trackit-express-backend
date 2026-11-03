@@ -4,6 +4,7 @@ import { PasswordHasherPort } from '../../../domain/repositories/services.port';
 import { ValidationError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 import { esContrasenaSegura, esCorreo, textoValido } from '../../validation';
+import { SendVerificationEmailUseCase } from './account-recovery.use-cases';
 
 export interface RegisterUserInput {
   nombre: unknown;
@@ -18,6 +19,7 @@ export class RegisterUserUseCase {
     private readonly users: UserRepositoryPort,
     private readonly hasher: PasswordHasherPort,
     private readonly audit: AuditService,
+    private readonly verificacion?: SendVerificationEmailUseCase,
   ) {}
 
   async execute(input: RegisterUserInput): Promise<{ id: number; correo: string; nombre: string }> {
@@ -48,6 +50,8 @@ export class RegisterUserUseCase {
       { userId: user.id as number, email: user.correo },
       { accion: 'Registro de usuario', entidad: 'Usuario', idEntidad: user.id, detalle: idRol === ROLES.CONDUCTOR ? 'Conductor' : 'Cliente' },
     );
+    // El correo de verificación nunca impide el registro
+    await this.verificacion?.enviarA(user).catch(() => undefined);
     return { id: user.id as number, correo: user.correo, nombre: user.nombre };
   }
 }

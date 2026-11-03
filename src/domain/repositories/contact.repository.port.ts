@@ -4,4 +4,5 @@ export interface ContactRepositoryPort {
   save(m: MensajeContacto): Promise<MensajeContacto>;
   search(f: { pagina: number; tamano: number; pendientes: boolean }): Promise<{ items: MensajeContacto[]; total: number }>;
   markAttended(id: number): Promise<boolean>;
+  delete(id: number): Promise<boolean>;
 }

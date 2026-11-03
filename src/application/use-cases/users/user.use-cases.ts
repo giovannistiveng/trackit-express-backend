@@ -16,6 +16,7 @@ export interface PerfilUsuario {
   nombre_rol: string;
   telefono: string | null;
   fecha_registro: string | null;
+  correo_verificado: boolean;
 }
 
 function presentar(u: User): PerfilUsuario {
@@ -27,6 +28,7 @@ function presentar(u: User): PerfilUsuario {
     nombre_rol: NOMBRES_ROL[u.id_rol] ?? 'Usuario',
     telefono: u.telefono ?? null,
     fecha_registro: u.fecha_registro ? u.fecha_registro.toISOString() : null,
+    correo_verificado: u.correo_verificado !== false,
   };
 }
 

@@ -10,6 +10,7 @@ import { crearContenedor } from '../../src/infrastructure/container';
 import { crearApp } from '../../src/infrastructure/http/app';
 import { LocalDiskStorage } from '../../src/infrastructure/external/local-disk.storage';
 import { DistancePort, GeocodingPort } from '../../src/domain/repositories/services.port';
+import { CorreoSaliente, EstadoGateway, MailerPort, PaymentGatewayPort, PushSenderPort } from '../../src/domain/repositories/platform.ports';
 
 export const DIR_UPLOADS = path.join(os.tmpdir(), 'trackit-test-uploads');
 
@@ -57,15 +58,70 @@ export async function reiniciarBase(p: Pool = pool): Promise<void> {
   await p.query(readFileSync(path.join(dir, 'seed.sql'), 'utf8'));
 }
 
-export function crearAppPrueba() {
-  const contenedor = crearContenedor({
+/** Buzón de correo en memoria: las pruebas leen los enlaces de verificación y recuperación. */
+export class BuzonPrueba implements MailerPort {
+  readonly correos: CorreoSaliente[] = [];
+  async enviar(c: CorreoSaliente) {
+    this.correos.push(c);
+  }
+  /** Último enlace enviado a un correo. */
+  enlace(para: string): string {
+    const c = [...this.correos].reverse().find((x) => x.para === para);
+    return /https?:\/\/[^\s]+/.exec(c?.texto ?? '')?.[0] ?? '';
+  }
+  token(para: string): string {
+    return new URL(this.enlace(para)).searchParams.get('token') ?? '';
+  }
+}
+
+/** Pasarela Nequi de prueba controlable: cada cobro queda en el estado que indique la prueba. */
+export class NequiPrueba implements PaymentGatewayPort {
+  readonly nombre = 'Nequi (pruebas)';
+  estado: EstadoGateway = 'pendiente';
+  fallarCobro = false;
+  fallarReembolso = false;
+  readonly cobros: { telefono: string; monto: number; referencia: string }[] = [];
+  readonly reembolsos: string[] = [];
+  async solicitarCobro(d: { telefono: string; monto: number; referencia: string }) {
+    if (this.fallarCobro) throw new Error('Nequi no disponible');
+    this.cobros.push(d);
+    return { transaccionId: `T-${this.cobros.length}` };
+  }
+  async consultarEstado() {
+    return { estado: this.estado };
+  }
+  async reembolsar(d: { transaccionId: string }) {
+    if (this.fallarReembolso) throw new Error('Reverso no disponible');
+    this.reembolsos.push(d.transaccionId);
+  }
+}
+
+export const buzon = new BuzonPrueba();
+export const nequi = new NequiPrueba();
+export const pushEnviados: { endpoint: string; titulo: string }[] = [];
+const pushPrueba: PushSenderPort = {
+  plataformas: ['web', 'android', 'ios'],
+  enviar: async (s, m) => {
+    pushEnviados.push({ endpoint: s.endpoint, titulo: m.titulo });
+    return !s.endpoint.includes('vencido');
+  },
+};
+
+export function crearContenedorPrueba(reloj: () => Date = () => MEDIODIA) {
+  return crearContenedor({
     pool,
     log: logger,
     distancia: distanciaFija,
     geocodificador: geocodificadorFijo,
-    reloj: () => MEDIODIA,
+    reloj,
     storage: new LocalDiskStorage(DIR_UPLOADS, 'http://localhost:3000'),
+    mailer: buzon,
+    pasarela: nequi,
+    pushSenders: [pushPrueba],
   });
+}
+
+export function crearAppPrueba(contenedor = crearContenedorPrueba()) {
   return crearApp({ contenedor, log: logger, salud: async () => (await pool.query('SELECT 1'), true) });
 }
 

@@ -167,7 +167,7 @@ describe('Seguimiento, notificaciones, reputación y ganancias', () => {
     expect(s0).toMatchObject({ estado: 'Pendiente', recorrido: [], en_vivo: false, eta_minutos: null, destino: { direccion: 'Silvania', coords: SILVANIA } });
 
     await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: envio.id_envio });
-    await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(conductor.token));
+    await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
     const ahora = Date.now();
     for (let i = 0; i < 3; i++) {
       await request(app)
@@ -189,7 +189,7 @@ describe('Seguimiento, notificaciones, reputación y ganancias', () => {
     // Entrega y calificación con comentario
     const evid = await request(app).post(`/api/envios/${envio.id_envio}/evidencia`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'f.webp', contentType: 'image/webp' });
     expect(evid.status).toBe(201);
-    await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: evid.body.url_foto, pin_seguridad: envio.pin_seguridad });
+    await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: evid.body.url_foto, pin_seguridad: envio.pin_seguridad, efectivo_recibido: true });
     expect((await request(app).post(`/api/envios/${envio.id_envio}/calificar`).set(auth(cliente.token)).send({ rating: 5, comentario: 'y'.repeat(301) })).status).toBe(400);
     const cal = await request(app).post(`/api/envios/${envio.id_envio}/calificar`).set(auth(cliente.token)).send({ rating: 5, comentario: '  Muy puntual  ' });
     expect(cal.body.envio).toMatchObject({ calificacion: 5, comentario: 'Muy puntual' });
@@ -197,7 +197,7 @@ describe('Seguimiento, notificaciones, reputación y ganancias', () => {
     // Notificaciones del cliente: aceptado → en camino → entregado (más reciente primero)
     const avisos = await request(app).get('/api/notificaciones').set(auth(cliente.token));
     expect(avisos.body.no_leidas).toBe(3);
-    expect(avisos.body.items.map((a: { tipo: string }) => a.tipo)).toEqual(['envio_entregado', 'ruta_iniciada', 'envio_aceptado']);
+    expect(avisos.body.items.map((a: { tipo: string }) => a.tipo)).toEqual(['envio_entregado', 'paquete_recogido', 'envio_aceptado']);
     expect((await request(app).get('/api/notificaciones/no-leidas').set(auth(cliente.token))).body).toEqual({ no_leidas: 3 });
     const primero = avisos.body.items[0].id;
     expect((await request(app).post(`/api/notificaciones/${primero}/leer`).set(auth(cliente.token))).status).toBe(204);

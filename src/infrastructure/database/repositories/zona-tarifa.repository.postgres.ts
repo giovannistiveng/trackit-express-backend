@@ -39,7 +39,7 @@ export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
 
   async findAll(incluirInactivas = false): Promise<ZonaTarifa[]> {
     const result = await this.pool.query<ZonaRow>(
-      `SELECT * FROM Zona_Tarifa WHERE $1::boolean OR activa ORDER BY tarifa_base, radio_km, id_zona`,
+      `SELECT * FROM Zona_Tarifa WHERE eliminada = FALSE AND ($1::boolean OR activa) ORDER BY tarifa_base, radio_km, id_zona`,
       [incluirInactivas],
     );
     return result.rows.map((r) => this.mapRow(r));
@@ -94,6 +94,22 @@ export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
       if (esViolacionUnica(e)) throw new ValidationError('Ya existe una zona con ese nombre');
       throw e;
     }
+  }
+
+  async remove(id_zona: number): Promise<'borrada' | 'archivada' | null> {
+    const usada = await this.pool.query('SELECT 1 FROM Envio WHERE id_zona = $1 LIMIT 1', [id_zona]);
+    if (usada.rows.length > 0) {
+      // Hay envíos con esta zona: se oculta en todas partes pero se conserva para el historial
+      const r = await this.pool.query(
+        `UPDATE Zona_Tarifa SET eliminada = TRUE, activa = FALSE,
+                nombre_zona = LEFT(nombre_zona, 80) || ' (eliminada ' || id_zona || ')'
+         WHERE id_zona = $1 AND eliminada = FALSE`,
+        [id_zona],
+      );
+      return (r.rowCount ?? 0) > 0 ? 'archivada' : null;
+    }
+    const r = await this.pool.query('DELETE FROM Zona_Tarifa WHERE id_zona = $1', [id_zona]);
+    return (r.rowCount ?? 0) > 0 ? 'borrada' : null;
   }
 
   private mapRow(row: ZonaRow): ZonaTarifa {

@@ -10,6 +10,11 @@ import { NotificationService } from '../../src/application/services/notification
 import { VehicleRepositoryPort } from '../../src/domain/repositories/vehicle.repository.port';
 import { AuditRepositoryPort } from '../../src/domain/repositories/audit.repository.port';
 import { AuditService } from '../../src/application/services/audit.service';
+import { PagosService, PublicadorEnvios } from '../../src/application/services/pagos.service';
+import { ChatRepositoryPort, PagoRepositoryPort, ParadaRepositoryPort, PaymentGatewayPort } from '../../src/domain/repositories/platform.ports';
+import { Pago } from '../../src/domain/entities/pago.entity';
+import { MensajeChat } from '../../src/domain/entities/chat.entity';
+import { Parada } from '../../src/domain/entities/shipment.entity';
 
 export const CLIENTE: Actor = { userId: 10, role: 2, email: 'cli@t.co' };
 export const CONDUCTOR: Actor = { userId: 20, role: 3, email: 'con@t.co' };
@@ -70,12 +75,32 @@ export class FakeShipments implements ShipmentRepositoryPort {
   async searchAdmin(): Promise<{ items: EnvioAdmin[]; total: number }> {
     return { items: [], total: 0 };
   }
+  async findByToken(token: string) {
+    return [...this.envios.values()].find((e) => e.token_seguimiento === token) ?? null;
+  }
+  async updateDetalles(id: number, d: Partial<Envio>) {
+    this.envios.set(id, { ...(this.envios.get(id) as Envio), ...d });
+  }
+  async registerPickup(id: number, url: string, ahora: Date) {
+    this.envios.set(id, { ...(this.envios.get(id) as Envio), url_foto_recogida: url, fecha_recogida: ahora, estado: 'En Ruta' });
+  }
+  async markDestinationVisited(id: number, ahora: Date) {
+    this.envios.set(id, { ...(this.envios.get(id) as Envio), destino_visitado_en: ahora });
+  }
+  async findScheduledToAnnounce() {
+    return [...this.envios.values()].filter((e) => e.fecha_programada && !e.aviso_programado && e.estado === 'Pendiente');
+  }
+  async markScheduledAnnounced(id: number) {
+    this.envios.set(id, { ...(this.envios.get(id) as Envio), aviso_programado: true });
+  }
 }
 
 export class FakeNotifications implements NotificationRepositoryPort {
   avisos: Notificacion[] = [];
   async save(n: Notificacion) {
-    this.avisos.push({ ...n, id: this.avisos.length + 1, leida: false, fecha: new Date() });
+    const id = this.avisos.length + 1;
+    this.avisos.push({ ...n, id, leida: false, fecha: new Date() });
+    return id;
   }
   async findByUser(id: number, o: { soloNoLeidas: boolean; limite: number }) {
     return this.avisos.filter((a) => a.id_usuario === id && (!o.soloNoLeidas || !a.leida)).slice(0, o.limite);
@@ -92,6 +117,16 @@ export class FakeNotifications implements NotificationRepositoryPort {
     const pendientes = this.avisos.filter((x) => x.id_usuario === idU && !x.leida);
     pendientes.forEach((a) => (a.leida = true));
     return pendientes.length;
+  }
+  async delete(idN: number, idU: number) {
+    const antes = this.avisos.length;
+    this.avisos = this.avisos.filter((x) => !(x.id === idN && x.id_usuario === idU));
+    return this.avisos.length < antes;
+  }
+  async deleteRead(idU: number) {
+    const antes = this.avisos.length;
+    this.avisos = this.avisos.filter((x) => !(x.id_usuario === idU && x.leida));
+    return antes - this.avisos.length;
   }
 }
 
@@ -163,4 +198,89 @@ export function conductorAprobado(drivers: FakeDrivers, id = 5): Conductor {
   const c: Conductor = { id_conductor: id, id_usuario: CONDUCTOR.userId, nombre: 'Con', correo: 'con@t.co', estado_aprobacion: 'Aprobado' };
   drivers.conductores.push(c);
   return c;
+}
+
+export class FakeParadas implements ParadaRepositoryPort {
+  paradas = new Map<number, Parada[]>();
+  async saveAll(id: number, p: Parada[]) {
+    this.paradas.set(id, p.map((x, i) => ({ ...x, id_parada: i + 1, completada_en: null })));
+  }
+  async findByEnvio(id: number) {
+    return this.paradas.get(id) ?? [];
+  }
+  async completar(id: number, idParada: number, ahora: Date) {
+    const p = (this.paradas.get(id) ?? []).find((x) => x.id_parada === idParada && !x.completada_en);
+    if (p) p.completada_en = ahora;
+    return !!p;
+  }
+}
+
+export class FakePagos implements PagoRepositoryPort {
+  pagos = new Map<number, Pago>();
+  async create(p: Omit<Pago, 'id_pago'>) {
+    const n = { ...p, id_pago: this.pagos.size + 1, creado: new Date(), actualizado: new Date() };
+    this.pagos.set(p.id_envio, n);
+    return n;
+  }
+  async findByEnvio(id: number) {
+    return this.pagos.get(id) ?? null;
+  }
+  async update(id: number, c: Partial<Pago>) {
+    const p = this.pagos.get(id);
+    if (!p) return null;
+    const n = { ...p, ...c, actualizado: new Date() };
+    this.pagos.set(id, n);
+    return n;
+  }
+  async findPendientesNequi() {
+    return [...this.pagos.values()].filter((p) => p.metodo === 'nequi' && p.estado === 'pendiente');
+  }
+  async search() {
+    return { items: [], total: 0 };
+  }
+}
+
+export class FakeChat implements ChatRepositoryPort {
+  mensajes: MensajeChat[] = [];
+  async save(m: Omit<MensajeChat, 'id_mensaje'>) {
+    const n = { ...m, id_mensaje: this.mensajes.length + 1, creado: new Date(), leido: false };
+    this.mensajes.push(n);
+    return n;
+  }
+  async findByEnvio(id: number) {
+    return this.mensajes.filter((m) => m.id_envio === id);
+  }
+  async markRead(id: number, lector: number) {
+    let n = 0;
+    for (const m of this.mensajes) if (m.id_envio === id && m.id_usuario !== lector && !m.leido) ((m.leido = true), n++);
+    return n;
+  }
+  async countUnread(id: number, lector: number) {
+    return this.mensajes.filter((m) => m.id_envio === id && m.id_usuario !== lector && !m.leido).length;
+  }
+}
+
+/** Pasarela que aprueba todo (o lo que diga `estado`). */
+export function pasarelaFalsa(estado: 'pendiente' | 'aprobado' | 'rechazado' | 'expirado' = 'aprobado'): PaymentGatewayPort & { estado: string; reembolsos: number } {
+  return {
+    nombre: 'falsa',
+    estado,
+    reembolsos: 0,
+    async solicitarCobro() {
+      return { transaccionId: 'T1' };
+    },
+    async consultarEstado() {
+      return { estado: this.estado as 'aprobado' };
+    },
+    async reembolsar() {
+      this.reembolsos++;
+    },
+  };
+}
+
+/** PagosService con repositorios falsos. */
+export function pagosFalsos(envios: FakeShipments, drivers: FakeDrivers, servicio: NotificationService, pasarela = pasarelaFalsa()) {
+  const repo = new FakePagos();
+  const publicador = new PublicadorEnvios(envios, drivers, servicio);
+  return { repo, publicador, pasarela, servicio: new PagosService(repo, pasarela, envios, publicador, servicio) };
 }

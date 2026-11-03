@@ -7,4 +7,5 @@ export interface UserRepositoryPort {
   findById(id: number): Promise<User | null>;
   updateProfile(id: number, datos: { nombre: string; telefono: string | null }): Promise<User>;
   updatePassword(id: number, passwordHash: string): Promise<void>;
+  markEmailVerified(id: number): Promise<void>;
 }

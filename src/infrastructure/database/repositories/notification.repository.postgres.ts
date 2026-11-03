@@ -16,11 +16,12 @@ interface NotificacionRow {
 export class NotificationRepositoryPostgres implements NotificationRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
-  async save(n: Notificacion): Promise<void> {
-    await this.pool.query(
-      'INSERT INTO Notificacion (id_usuario, tipo, titulo, mensaje, id_envio) VALUES ($1, $2, $3, $4, $5)',
+  async save(n: Notificacion): Promise<number> {
+    const r = await this.pool.query<{ id_notificacion: number }>(
+      'INSERT INTO Notificacion (id_usuario, tipo, titulo, mensaje, id_envio) VALUES ($1, $2, $3, $4, $5) RETURNING id_notificacion',
       [n.id_usuario, n.tipo, n.titulo, n.mensaje, n.id_envio ?? null],
     );
+    return r.rows[0].id_notificacion;
   }
 
   async findByUser(id_usuario: number, o: { soloNoLeidas: boolean; limite: number }): Promise<Notificacion[]> {
@@ -59,6 +60,16 @@ export class NotificationRepositoryPostgres implements NotificationRepositoryPor
 
   async markAllRead(id_usuario: number): Promise<number> {
     const r = await this.pool.query('UPDATE Notificacion SET leida = TRUE WHERE id_usuario = $1 AND leida = FALSE', [id_usuario]);
+    return r.rowCount ?? 0;
+  }
+
+  async delete(id_notificacion: number, id_usuario: number): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM Notificacion WHERE id_notificacion = $1 AND id_usuario = $2', [id_notificacion, id_usuario]);
+    return (r.rowCount ?? 0) > 0;
+  }
+
+  async deleteRead(id_usuario: number): Promise<number> {
+    const r = await this.pool.query('DELETE FROM Notificacion WHERE id_usuario = $1 AND leida = TRUE', [id_usuario]);
     return r.rowCount ?? 0;
   }
 }

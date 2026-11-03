@@ -1,3 +1,4 @@
+import path from 'path';
 import { Pool } from 'pg';
 import { config } from '../config';
 import { Logger } from '../shared/logger';
@@ -12,12 +13,54 @@ import { NotificationService } from '../application/services/notification.servic
 import {
   CancelShipmentUseCase,
   CreateShipmentUseCase,
+  EditShipmentUseCase,
   ListClientShipmentsUseCase,
+  PublicTrackingUseCase,
   RateShipmentUseCase,
   TrackShipmentUseCase,
 } from '../application/use-cases/shipments/client-shipments.use-cases';
+import { ListChatUseCase, SendChatMessageUseCase } from '../application/use-cases/shipments/chat.use-cases';
+import {
+  DriverWalletUseCase,
+  GenerateSettlementsUseCase,
+  GetShipmentPaymentUseCase,
+  ListPaymentsAdminUseCase,
+  ListSettlementsUseCase,
+  PaySettlementUseCase,
+  ProcessPendingPaymentsUseCase,
+  RetryNequiPaymentUseCase,
+  RetryRefundUseCase,
+  SwitchToCashUseCase,
+} from '../application/use-cases/payments/payment.use-cases';
+import {
+  RequestPasswordResetUseCase,
+  ResetPasswordUseCase,
+  SendVerificationEmailUseCase,
+  VerifyEmailUseCase,
+} from '../application/use-cases/auth/account-recovery.use-cases';
+import { SubscribePushUseCase, UnsubscribePushUseCase } from '../application/use-cases/realtime/push.use-cases';
+import { PagosService, PublicadorEnvios } from '../application/services/pagos.service';
+import { PushService } from '../application/services/push.service';
+import { MailerPort, PaymentGatewayPort, PushSenderPort } from '../domain/repositories/platform.ports';
+import {
+  ChatRepositoryPostgres,
+  LiquidacionRepositoryPostgres,
+  PagoRepositoryPostgres,
+  ParadaRepositoryPostgres,
+  PushRepositoryPostgres,
+  TokenRepositoryPostgres,
+} from './database/repositories/platform.repositories.postgres';
+import { BuzonLocalMailer, SmtpMailer } from './external/mailers';
+import { NequiConectaGateway, NequiSimuladoGateway } from './external/nequi.gateways';
+import { EventBusMemoria } from './realtime/event-bus';
+import { TicketsEventos } from './realtime/tickets';
+import { FcmSender, WebPushSender, clavesVapid } from './realtime/push.senders';
 import {
   AcceptShipmentUseCase,
+  AnnounceScheduledUseCase,
+  ArriveDestinationUseCase,
+  CompleteStopUseCase,
+  PickupShipmentUseCase,
   GetActiveServiceUseCase,
   GetLastLocationUseCase,
   GetTrackingUseCase,
@@ -46,6 +89,8 @@ import {
   ListZonesAdminUseCase,
   CreateZoneUseCase,
   UpdateVehicleTariffUseCase,
+  DeleteContactUseCase,
+  DeleteZoneUseCase,
 } from '../application/use-cases/admin/admin.use-cases';
 import { ChangePasswordUseCase, GetMyProfileUseCase, UpdateMyProfileUseCase } from '../application/use-cases/users/user.use-cases';
 import {
@@ -53,6 +98,8 @@ import {
   ListNotificationsUseCase,
   MarkAllNotificationsReadUseCase,
   MarkNotificationReadUseCase,
+  DeleteNotificationUseCase,
+  DeleteReadNotificationsUseCase,
 } from '../application/use-cases/notifications/notification.use-cases';
 import { GetPublicStatsUseCase, ListPublicZonesUseCase, SubmitContactUseCase } from '../application/use-cases/public/public.use-cases';
 import { ContactRepositoryPostgres } from './database/repositories/contact.repository.postgres';
@@ -79,6 +126,10 @@ import { JWTService } from './security/jwt.service';
 export interface Dependencias {
   pool: Pool;
   log: Logger;
+  /** Reemplazables en pruebas. */
+  mailer?: MailerPort;
+  pasarela?: PaymentGatewayPort;
+  pushSenders?: PushSenderPort[];
   /** Reemplazables en pruebas. */
   tokens?: TokenServicePort;
   hasher?: PasswordHasherPort;
@@ -108,19 +159,56 @@ export function crearContenedor(d: Dependencias) {
   const documentos = new DocumentoConductorRepositoryPostgres(d.pool);
   const ubicaciones = new LocationRepositoryPostgres(d.pool);
   const audit = new AuditService(new AuditRepositoryPostgres(d.pool), (e) => d.log.child('Auditoria').warn('No se pudo registrar la auditoría', e));
+  const reloj = d.reloj ?? (() => new Date());
+  const bus = new EventBusMemoria();
+  const tickets = new TicketsEventos();
+  const pushRepo = new PushRepositoryPostgres(d.pool);
+  // En pruebas (pushSenders inyectados) no se generan ni guardan claves
+  const claves = d.pushSenders ? { publica: '', privada: '' } : clavesVapid(config.push.vapidPublica, config.push.vapidPrivada);
+  const senders: PushSenderPort[] =
+    d.pushSenders ??
+    [new WebPushSender(claves, config.push.vapidContacto), FcmSender.desdeArchivo(config.push.fcmCuentaServicio)].filter(
+      (x): x is WebPushSender | FcmSender => x !== null,
+    );
+  const push = new PushService(pushRepo, senders, (e) => d.log.child('Push').warn('No se pudo enviar la notificación push', e));
   const notificacionesRepo = new NotificationRepositoryPostgres(d.pool);
-  const notificaciones = new NotificationService(notificacionesRepo, (e) => d.log.child('Notificaciones').warn('No se pudo crear la notificación', e));
+  const notificaciones = new NotificationService(notificacionesRepo, (e) => d.log.child('Notificaciones').warn('No se pudo crear la notificación', e), {
+    bus,
+    push,
+  });
+  const mailer =
+    d.mailer ?? (config.correo.host ? new SmtpMailer(config.correo) : new BuzonLocalMailer(path.join(config.log.dir, 'correos')));
+  const pasarela =
+    d.pasarela ??
+    (config.nequi.modo === 'conecta' ? new NequiConectaGateway(config.nequi) : new NequiSimuladoGateway(config.nequi.aprobacionSimuladaSeg * 1000));
+  const tokensCuenta = new TokenRepositoryPostgres(d.pool);
+  const pagosRepo = new PagoRepositoryPostgres(d.pool);
+  const liquidaciones = new LiquidacionRepositoryPostgres(d.pool);
+  const paradas = new ParadaRepositoryPostgres(d.pool);
+  const chat = new ChatRepositoryPostgres(d.pool);
   const metricas = new MetricsRepositoryPostgres(d.pool);
   const contactos = new ContactRepositoryPostgres(d.pool);
   const tarifas = new TarifaVehiculoRepositoryPostgres(d.pool);
   const cotizador = new Cotizador(zonas, tarifas, distancia, d.reloj);
+  const publicador = new PublicadorEnvios(envios, drivers, notificaciones, reloj);
+  const pagos = new PagosService(pagosRepo, pasarela, envios, publicador, notificaciones, reloj);
+  const verificacion = new SendVerificationEmailUseCase(users, tokensCuenta, mailer, config.frontendUrl, reloj);
+  const seguimiento = new GetTrackingUseCase(envios, drivers, ubicaciones, reloj);
 
   return {
     tokens,
+    bus,
+    tickets,
+    clavePush: claves.publica,
+    pasarela: pasarela.nombre,
     storageLocal: storage instanceof LocalDiskStorage,
     auth: {
-      registrar: new RegisterUserUseCase(users, hasher, audit),
+      registrar: new RegisterUserUseCase(users, hasher, audit, verificacion),
       login: new LoginUserUseCase(users, hasher, tokens, audit),
+      enviarVerificacion: verificacion,
+      verificarCorreo: new VerifyEmailUseCase(users, tokensCuenta, audit, reloj),
+      olvidePassword: new RequestPasswordResetUseCase(users, tokensCuenta, mailer, config.frontendUrl, audit, reloj),
+      restablecerPassword: new ResetPasswordUseCase(users, tokensCuenta, hasher, mailer, audit, reloj),
     },
     catalogo: {
       zonas: new ListZonesUseCase(zonas),
@@ -130,20 +218,44 @@ export function crearContenedor(d: Dependencias) {
       direccionDe: new ReverseGeocodeUseCase(geocodificador),
     },
     envios: {
-      crear: new CreateShipmentUseCase(envios, cotizador, audit, drivers, notificaciones),
+      crear: new CreateShipmentUseCase(envios, cotizador, audit, paradas, pagos, publicador),
+      editar: new EditShipmentUseCase(envios, audit),
       delCliente: new ListClientShipmentsUseCase(envios),
-      rastrear: new TrackShipmentUseCase(envios, drivers, vehiculos),
+      rastrear: new TrackShipmentUseCase(envios, drivers, vehiculos, paradas, pagosRepo, chat),
       calificar: new RateShipmentUseCase(envios, drivers, audit, notificaciones),
-      cancelar: new CancelShipmentUseCase(envios, drivers, audit, notificaciones),
-      disponibles: new ListAvailableShipmentsUseCase(envios, drivers, vehiculos),
+      cancelar: new CancelShipmentUseCase(envios, drivers, audit, notificaciones, pagos),
+      disponibles: new ListAvailableShipmentsUseCase(envios, drivers, vehiculos, paradas, reloj),
       activo: new GetActiveServiceUseCase(envios, drivers),
-      aceptar: new AcceptShipmentUseCase(envios, drivers, vehiculos, audit, notificaciones),
+      aceptar: new AcceptShipmentUseCase(envios, drivers, vehiculos, audit, notificaciones, publicador, pagosRepo),
+      recoger: new PickupShipmentUseCase(envios, drivers, storage, audit, notificaciones, reloj),
       iniciarRuta: new StartRouteUseCase(envios, drivers, audit, notificaciones),
+      completarParada: new CompleteStopUseCase(envios, drivers, paradas, notificaciones, reloj),
+      llegadaDestino: new ArriveDestinationUseCase(envios, drivers, notificaciones, reloj),
       evidencia: new UploadEvidenceUseCase(envios, drivers, storage),
-      validarEntrega: new ValidateDeliveryUseCase(envios, drivers, audit, notificaciones),
+      validarEntrega: new ValidateDeliveryUseCase(envios, drivers, audit, notificaciones, paradas, pagos),
       registrarUbicacion: new RecordLocationUseCase(envios, drivers, ubicaciones),
       ultimaUbicacion: new GetLastLocationUseCase(envios, drivers, ubicaciones),
-      seguimiento: new GetTrackingUseCase(envios, drivers, ubicaciones),
+      seguimiento,
+      seguimientoPublico: new PublicTrackingUseCase(envios, drivers, vehiculos, paradas, seguimiento),
+      chat: new ListChatUseCase(envios, drivers, chat),
+      enviarMensaje: new SendChatMessageUseCase(envios, drivers, users, chat, notificaciones),
+      anunciarProgramados: new AnnounceScheduledUseCase(envios, pagosRepo, publicador, reloj),
+    },
+    pagos: {
+      estado: new GetShipmentPaymentUseCase(envios, drivers, pagosRepo, pagos),
+      reintentar: new RetryNequiPaymentUseCase(envios, pagosRepo, pagos, audit),
+      efectivo: new SwitchToCashUseCase(envios, pagosRepo, publicador, audit),
+      procesarPendientes: new ProcessPendingPaymentsUseCase(pagosRepo, pagos),
+      billetera: new DriverWalletUseCase(drivers, liquidaciones),
+      generarLiquidaciones: new GenerateSettlementsUseCase(liquidaciones, drivers, notificaciones, audit, reloj),
+      liquidaciones: new ListSettlementsUseCase(liquidaciones),
+      pagarLiquidacion: new PaySettlementUseCase(liquidaciones, drivers, notificaciones, audit, reloj),
+      listar: new ListPaymentsAdminUseCase(pagosRepo),
+      reembolso: new RetryRefundUseCase(pagosRepo, pagos, audit),
+    },
+    push: {
+      suscribir: new SubscribePushUseCase(pushRepo),
+      desuscribir: new UnsubscribePushUseCase(pushRepo),
     },
     conductores: {
       perfil: new GetDriverProfileUseCase(drivers, vehiculos),
@@ -164,6 +276,8 @@ export function crearContenedor(d: Dependencias) {
       noLeidas: new CountUnreadNotificationsUseCase(notificacionesRepo),
       leer: new MarkNotificationReadUseCase(notificacionesRepo),
       leerTodas: new MarkAllNotificationsReadUseCase(notificacionesRepo),
+      borrar: new DeleteNotificationUseCase(notificacionesRepo),
+      borrarLeidas: new DeleteReadNotificationsUseCase(notificacionesRepo),
     },
     publico: {
       estadisticas: new GetPublicStatsUseCase(metricas),
@@ -180,6 +294,8 @@ export function crearContenedor(d: Dependencias) {
       tarifaVehiculo: new UpdateVehicleTariffUseCase(tarifas, audit),
       contactos: new ListContactsUseCase(contactos),
       atenderContacto: new ResolveContactUseCase(contactos, audit),
+      borrarContacto: new DeleteContactUseCase(contactos, audit),
+      borrarZona: new DeleteZoneUseCase(zonas, audit),
     },
   };
 }

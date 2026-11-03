@@ -7,6 +7,11 @@ export const TIPOS_NOTIFICACION = [
   'conductor_rechazado',
   'calificacion_recibida',
   'nuevo_servicio',
+  'pago_aprobado',
+  'pago_rechazado',
+  'liquidacion',
+  'mensaje_chat',
+  'paquete_recogido',
 ] as const;
 export type TipoNotificacion = (typeof TIPOS_NOTIFICACION)[number];
 

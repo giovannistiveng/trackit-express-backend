@@ -3,6 +3,7 @@ import { pool, testConnection } from '../../config/database';
 import { frontendLogger, logger } from '../../shared/logger';
 import { crearContenedor } from '../container';
 import { crearApp } from './app';
+import { iniciarTareas } from '../jobs';
 
 const log = logger.child('Servidor');
 
@@ -29,12 +30,17 @@ async function start(): Promise<void> {
     log.info(`Servidor corriendo en http://localhost:${config.port} (entorno: ${config.nodeEnv})`);
     log.info(`Documentación de la API en http://localhost:${config.port}/api/docs`);
     log.info(`Archivos: ${contenedor.storageLocal ? `disco local (${config.uploadsDir})` : 'Cloudinary'} · Logs en ${logger.directory}`);
+    log.info(`Pagos: ${contenedor.pasarela} · Correo: ${config.correo.host ? `SMTP ${config.correo.host}` : 'buzón local (logs/correos)'}`);
   });
+  const detenerTareas = iniciarTareas(contenedor, log.child('Tareas'));
 
   // Apagado ordenado: deja de aceptar peticiones, cierra la base de datos y vacía los logs
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
       log.info(`Señal ${signal} recibida, apagando el servidor`);
+      detenerTareas();
+      // Las conexiones de eventos (SSE) quedan abiertas: se cierran para poder apagar
+      setTimeout(() => server.closeAllConnections(), 2000).unref();
       server.close(async () => {
         await pool.end().catch(() => undefined);
         await Promise.all([logger.close(), frontendLogger.close()]);

@@ -1,5 +1,7 @@
 import { DesgloseTarifa } from '../../domain/services/tarifas';
 import { Envio, EnvioDetallado, gananciaConductor } from '../../domain/entities/shipment.entity';
+import { Pago } from '../../domain/entities/pago.entity';
+import { presentarPago } from './pagos.service';
 import { HistorialEstadoRow } from '../../domain/repositories/shipment.repository.port';
 
 export interface EnvioApi {
@@ -31,6 +33,19 @@ export interface EnvioApi {
   calificacion?: number | null;
   comentario?: string | null;
   conductor?: EnvioDetallado['conductor'];
+  metodo_pago?: string;
+  pago?: ReturnType<typeof presentarPago>;
+  /** Solo para el cliente dueño: token del enlace público de seguimiento. */
+  token_seguimiento?: string | null;
+  destinatario_nombre?: string | null;
+  destinatario_telefono?: string | null;
+  fecha_programada?: string | null;
+  ida_y_vuelta?: boolean;
+  destino_visitado_en?: string | null;
+  url_foto_recogida?: string | null;
+  fecha_recogida?: string | null;
+  paradas?: { id_parada?: number; orden: number; direccion: string; coords: { lat: number; lon: number }; notas?: string | null; completada_en: string | null }[];
+  chat_no_leidos?: number;
 }
 
 export interface OpcionesPresentacion {
@@ -41,6 +56,8 @@ export interface OpcionesPresentacion {
   historial?: HistorialEstadoRow[];
   calificacion?: number | null;
   conductor?: EnvioDetallado['conductor'];
+  pago?: Pago | null;
+  chatNoLeidos?: number;
 }
 
 /** Convierte un envío del dominio al JSON público de la API. */
@@ -62,7 +79,31 @@ export function presentarEnvio(envio: Envio | EnvioDetallado, o: OpcionesPresent
     notas: envio.notas ?? null,
     origen_coords: envio.origen_coords ?? null,
     destino_coords: envio.destino_coords ?? null,
+    metodo_pago: envio.metodo_pago ?? 'efectivo',
+    fecha_programada: envio.fecha_programada?.toISOString() ?? null,
+    ida_y_vuelta: !!envio.ida_y_vuelta,
+    destino_visitado_en: envio.destino_visitado_en?.toISOString() ?? null,
+    url_foto_recogida: envio.url_foto_recogida ?? null,
+    fecha_recogida: envio.fecha_recogida?.toISOString() ?? null,
   };
+  if (envio.paradas) {
+    salida.paradas = envio.paradas.map((p) => ({
+      id_parada: p.id_parada,
+      orden: p.orden,
+      direccion: p.direccion,
+      coords: p.coords,
+      notas: p.notas ?? null,
+      completada_en: p.completada_en?.toISOString() ?? null,
+    }));
+  }
+  if (o.pago !== undefined) salida.pago = presentarPago(o.pago);
+  if (o.chatNoLeidos !== undefined) salida.chat_no_leidos = o.chatNoLeidos;
+  // Quien recibe: lo ven el cliente dueño y el conductor asignado
+  if (o.incluirPin || (o.vistaConductor && envio.id_conductor)) {
+    salida.destinatario_nombre = envio.destinatario_nombre ?? null;
+    salida.destinatario_telefono = envio.destinatario_telefono ?? null;
+  }
+  if (o.incluirPin) salida.token_seguimiento = envio.token_seguimiento ?? null;
   if (envio.fecha_creacion) salida.fecha_creacion = envio.fecha_creacion.toISOString();
   if (envio.estado === 'Cancelado') salida.motivo_cancelacion = envio.motivo_cancelacion ?? null;
   if (o.vistaConductor) salida.ganancia_conductor = gananciaConductor(envio.tarifa);

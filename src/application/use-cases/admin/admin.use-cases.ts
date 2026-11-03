@@ -232,3 +232,38 @@ export class ResolveContactUseCase {
     await this.audit.registrar(actor, { accion: 'Contacto atendido', entidad: 'Contacto', idEntidad: id });
   }
 }
+
+/** Elimina una zona. Si tiene envíos se archiva (desaparece de todas partes, el historial se conserva). */
+export class DeleteZoneUseCase {
+  constructor(
+    private readonly zonas: ZonaTarifaRepositoryPort,
+    private readonly audit: AuditService,
+  ) {}
+
+  async execute(actor: Actor, idCrudo: unknown): Promise<{ resultado: 'borrada' | 'archivada' }> {
+    exigirRol(actor, ROLES.ADMIN);
+    const id = idValido(idCrudo, 'id_zona');
+    const zona = await this.zonas.findById(id);
+    if (!zona) throw new NotFoundError(`No existe la zona de tarifa con id ${id}`);
+    const activas = (await this.zonas.findAll()).filter((z) => z.id_zona !== id);
+    if (activas.length === 0) throw new ValidationError('No puedes eliminar la única zona activa: sin zonas no hay cobertura');
+    const resultado = await this.zonas.remove(id);
+    if (!resultado) throw new NotFoundError(`No existe la zona de tarifa con id ${id}`);
+    await this.audit.registrar(actor, { accion: 'Zona eliminada', entidad: 'Zona', idEntidad: id, detalle: `${zona.nombre_zona} (${resultado})` });
+    return { resultado };
+  }
+}
+
+export class DeleteContactUseCase {
+  constructor(
+    private readonly contactos: ContactRepositoryPort,
+    private readonly audit: AuditService,
+  ) {}
+
+  async execute(actor: Actor, idCrudo: unknown): Promise<void> {
+    exigirRol(actor, ROLES.ADMIN);
+    const id = idValido(idCrudo, 'id del mensaje');
+    if (!(await this.contactos.delete(id))) throw new NotFoundError('El mensaje no existe');
+    await this.audit.registrar(actor, { accion: 'Mensaje eliminado', entidad: 'Contacto', idEntidad: id });
+  }
+}

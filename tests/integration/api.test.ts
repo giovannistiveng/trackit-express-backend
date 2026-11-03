@@ -227,9 +227,15 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
 
     // Iniciar ruta y ubicación (CU-008)
     expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(otroConductor.token))).status).toBe(403);
-    const ruta = await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(conductor.token));
-    expect(ruta.body.envio.estado).toBe('En Ruta');
+    // Sin la foto de recogida no se inicia la ruta
+    expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(conductor.token))).body.error).toBe(
+      'Toma la foto del paquete al recogerlo para iniciar la ruta',
+    );
+    expect((await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token))).body.error).toBe('Toma la foto del paquete al recogerlo');
+    const ruta = await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
+    expect(ruta.body.envio).toMatchObject({ estado: 'En Ruta', url_foto_recogida: expect.stringMatching(/\/uploads\/trackit\/recogidas\//) });
     expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(conductor.token))).status).toBe(400);
+    expect((await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' })).status).toBe(400);
     const ub = { lat: 4.3369, lon: -74.3638, capturado_en: '2026-10-29T15:00:00.000Z' };
     expect((await request(app).post(`/api/envios/${envio.id_envio}/ubicacion`).set(auth(conductor.token)).send(ub)).status).toBe(201);
     expect((await request(app).post(`/api/envios/${envio.id_envio}/ubicacion`).set(auth(conductor.token)).send(ub)).status).toBe(201); // duplicado ignorado
@@ -250,11 +256,16 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     expect((await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: 'no-url', pin_seguridad: '1' })).body.error).toBe(
       'La evidencia fotográfica (url_foto) es obligatoria',
     );
-    const entrega = await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: evid.body.url_foto, pin_seguridad: envio.pin_seguridad });
+    // Pago en efectivo: el conductor confirma que recibió el dinero
+    expect((await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: evid.body.url_foto, pin_seguridad: envio.pin_seguridad })).body.error).toMatch(
+      /^Confirma que recibiste \$ /,
+    );
+    const entrega = await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: evid.body.url_foto, pin_seguridad: envio.pin_seguridad, efectivo_recibido: true });
     expect(entrega.body.envio).toMatchObject({ estado: 'Entregado', url_foto: evid.body.url_foto });
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: evid.body.url_foto, pin_seguridad: envio.pin_seguridad })).body.error).toBe(
+    expect((await request(app).post(`/api/envios/${envio.id_envio}/validar-entrega`).set(auth(conductor.token)).send({ url_foto: evid.body.url_foto, pin_seguridad: envio.pin_seguridad, efectivo_recibido: true })).body.error).toBe(
       'Este envío ya ha sido validado como entregado',
     );
+    expect((await request(app).get(`/api/envios/${envio.id_envio}/pago`).set(auth(cliente.token))).body).toMatchObject({ metodo: 'efectivo', estado: 'cobrado' });
     expect((await request(app).get('/api/conductores/envios/activo').set(auth(conductor.token))).body.envio).toBeNull();
 
     // Calificación (CU-010)

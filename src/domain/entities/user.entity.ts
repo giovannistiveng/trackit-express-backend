@@ -6,4 +6,5 @@ export interface User {
   id_rol: number;
   telefono?: string | null;
   fecha_registro?: Date;
+  correo_verificado?: boolean;
 }

@@ -9,4 +9,6 @@ export interface ZonaTarifaRepositoryPort {
   updateTarifa(id_zona: number, tarifa_base: number): Promise<ZonaTarifa | null>;
   create(zona: DatosZona): Promise<ZonaTarifa>;
   update(id_zona: number, cambios: Partial<DatosZona>): Promise<ZonaTarifa | null>;
+  /** Borra la zona si ningún envío la usa; si no, la marca como eliminada (se conserva el historial). */
+  remove(id_zona: number): Promise<'borrada' | 'archivada' | null>;
 }

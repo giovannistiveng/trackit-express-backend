@@ -52,4 +52,9 @@ export class ContactRepositoryPostgres implements ContactRepositoryPort {
     const r = await this.pool.query('UPDATE Contacto SET atendido = TRUE WHERE id_contacto = $1', [id]);
     return (r.rowCount ?? 0) > 0;
   }
+
+  async delete(id: number): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM Contacto WHERE id_contacto = $1', [id]);
+    return (r.rowCount ?? 0) > 0;
+  }
 }

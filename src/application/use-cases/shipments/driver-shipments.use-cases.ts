@@ -2,12 +2,15 @@ import { Actor, ROLES } from '../../../domain/entities/actor.entity';
 import { ESTADOS_ACTIVOS_CONDUCTOR, Envio } from '../../../domain/entities/shipment.entity';
 import { haversineKm, minutosEstimados } from '../../../domain/services/geo';
 import { categoriasAtendibles, puedeAtender } from '../../../domain/services/tarifas';
+import { PagoRepositoryPort, ParadaRepositoryPort } from '../../../domain/repositories/platform.ports';
+import { PagosService, PublicadorEnvios } from '../../services/pagos.service';
 import { DriverRepositoryPort } from '../../../domain/repositories/driver.repository.port';
 import { LocationRepositoryPort } from '../../../domain/repositories/location.repository.port';
 import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
 import { ArchivoSubido, StoragePort } from '../../../domain/repositories/storage.port';
 import { VehicleRepositoryPort } from '../../../domain/repositories/vehicle.repository.port';
-import { ForbiddenError, ValidationError } from '../../../shared/errors';
+import { ForbiddenError, NotFoundError, ValidationError } from '../../../shared/errors';
+import { idValido } from '../../validation';
 import { AuditService } from '../../services/audit.service';
 import { NotificationService } from '../../services/notification.service';
 import { EnvioApi, presentarEnvio } from '../../services/envio.presenter';
@@ -32,13 +35,20 @@ export class ListAvailableShipmentsUseCase {
     private readonly envios: ShipmentRepositoryPort,
     private readonly drivers: DriverRepositoryPort,
     private readonly vehicles: VehicleRepositoryPort,
+    private readonly paradas?: ParadaRepositoryPort,
+    private readonly reloj: () => Date = () => new Date(),
   ) {}
 
   async execute(actor: Actor): Promise<EnvioApi[]> {
     const c = await conductorAprobado(this.drivers, actor);
     const vehiculos = (await this.vehicles.findByDriverId(c.id_conductor)).map((v) => v.categoria);
-    const lista = await this.envios.findAvailable(categoriasAtendibles(vehiculos));
-    return lista.map((e) => presentarEnvio(e, { incluirPin: false, vistaConductor: true }));
+    const lista = await this.envios.findAvailable(categoriasAtendibles(vehiculos), this.reloj());
+    return Promise.all(
+      lista.map(async (e) => {
+        const paradas = this.paradas ? await this.paradas.findByEnvio(e.id_envio as number) : undefined;
+        return presentarEnvio({ ...e, paradas }, { incluirPin: false, vistaConductor: true });
+      }),
+    );
   }
 }
 
@@ -64,6 +74,8 @@ export class AcceptShipmentUseCase {
     private readonly vehicles: VehicleRepositoryPort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
+    private readonly publicador?: PublicadorEnvios,
+    private readonly pagos?: PagoRepositoryPort,
   ) {}
 
   async execute(actor: Actor, input: { id_envio: unknown; id_conductor?: unknown }): Promise<EnvioApi> {
@@ -74,6 +86,9 @@ export class AcceptShipmentUseCase {
       throw new ValidationError(`El envío ya está en estado ${envio.estado} y no se puede asignar`);
     }
     if (envio.id_conductor) throw new ValidationError('Este envío ya fue tomado por otro conductor');
+    if (this.publicador && this.pagos && !this.publicador.visible(envio, await this.pagos.findByEnvio(envio.id_envio as number))) {
+      throw new ValidationError('Este envío todavía no está disponible para aceptar');
+    }
 
     const activos = await this.envios.findByDriver(c.id_conductor, ESTADOS_ACTIVOS_CONDUCTOR);
     if (activos.length > 0) throw new ValidationError('Ya tienes un servicio activo. Termínalo antes de aceptar otro');
@@ -111,6 +126,7 @@ export class StartRouteUseCase {
   async execute(actor: Actor, id: unknown): Promise<EnvioApi> {
     const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
     exigirEstado(envio, ['Asignado'], `El envío está en estado ${envio.estado} y no se puede iniciar la ruta`);
+    if (!envio.url_foto_recogida) throw new ValidationError('Toma la foto del paquete al recogerlo para iniciar la ruta');
     await this.envios.updateStatus(envio.id_envio as number, 'En Ruta');
     const actualizado = await envioExistente(this.envios, envio.id_envio);
     await this.audit.registrar(actor, { accion: 'Ruta iniciada', entidad: 'Envío', idEntidad: envio.id_envio });
@@ -150,9 +166,11 @@ export class ValidateDeliveryUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
+    private readonly paradas?: ParadaRepositoryPort,
+    private readonly pagos?: PagosService,
   ) {}
 
-  async execute(actor: Actor, id: unknown, input: { url_foto: unknown; pin_seguridad: unknown }) {
+  async execute(actor: Actor, id: unknown, input: { url_foto: unknown; pin_seguridad: unknown; efectivo_recibido?: unknown }) {
     if (typeof input.url_foto !== 'string' || !/^https?:\/\/\S+$/.test(input.url_foto)) {
       throw new ValidationError('La evidencia fotográfica (url_foto) es obligatoria');
     }
@@ -163,8 +181,20 @@ export class ValidateDeliveryUseCase {
       throw new ValidationError('El PIN de seguridad es obligatorio para validar la entrega');
     }
     if (String(input.pin_seguridad) !== String(envio.pin_seguridad)) throw new ValidationError('PIN incorrecto');
+    if (this.paradas) {
+      const faltan = (await this.paradas.findByEnvio(envio.id_envio as number)).filter((p) => !p.completada_en);
+      if (faltan.length > 0) throw new ValidationError(`Marca como hechas las paradas pendientes (${faltan.map((p) => p.orden).join(', ')}) antes de finalizar`);
+    }
+    if (envio.ida_y_vuelta && !envio.destino_visitado_en) {
+      throw new ValidationError('Es un envío de ida y vuelta: marca la llegada al destino antes de finalizar en el origen');
+    }
+    const efectivo = (envio.metodo_pago ?? 'efectivo') === 'efectivo';
+    if (efectivo && this.pagos && input.efectivo_recibido !== true) {
+      throw new ValidationError(`Confirma que recibiste $ ${Math.round(envio.tarifa).toLocaleString('es-CO')} en efectivo`);
+    }
 
     await this.envios.registerDelivery(envio.id_envio as number, input.url_foto);
+    if (efectivo && this.pagos) await this.pagos.cobrarEfectivo(envio.id_envio as number);
     await this.audit.registrar(actor, { accion: 'Entrega validada', entidad: 'Envío', idEntidad: envio.id_envio });
     await this.notificaciones.notificar({
       id_usuario: envio.id_cliente,
@@ -257,7 +287,11 @@ export class GetTrackingUseCase {
   ) {}
 
   async execute(actor: Actor, id: unknown): Promise<Seguimiento> {
-    const envio = await envioConUbicacionVisible(this.envios, this.drivers, actor, id);
+    return this.porEnvio(await envioConUbicacionVisible(this.envios, this.drivers, actor, id));
+  }
+
+  /** Datos del mapa sin comprobar acceso (lo usa también el enlace público de seguimiento). */
+  async porEnvio(envio: Envio): Promise<Seguimiento> {
     const activo = ESTADOS_ACTIVOS_CONDUCTOR.includes(envio.estado ?? 'Pendiente');
     const recorrido = activo || envio.estado === 'Entregado' ? await this.ubicaciones.findTrail(envio.id_envio as number, PUNTOS_RECORRIDO) : [];
     const ultima = recorrido.at(-1) ?? null;
@@ -265,7 +299,9 @@ export class GetTrackingUseCase {
 
     let distancia: number | null = null;
     let eta: number | null = null;
-    const meta = envio.estado === 'Asignado' ? envio.origen_coords : envio.destino_coords;
+    // Ida y vuelta: después de pasar por el destino, la meta es volver al origen
+    const meta =
+      envio.estado === 'Asignado' || (envio.ida_y_vuelta && envio.destino_visitado_en) ? envio.origen_coords : envio.destino_coords;
     if (activo && ultima && meta) {
       distancia = Math.round(haversineKm(ultima, meta) * 10) / 10;
       eta = minutosEstimados(distancia);
@@ -289,5 +325,104 @@ export class GetTrackingUseCase {
       distancia_restante_km: distancia,
       eta_minutos: eta,
     };
+  }
+}
+
+/**
+ * El conductor recoge el paquete: sube la foto y el envío pasa a En Ruta en un solo paso.
+ * El cliente recibe el aviso con la foto como constancia del estado del paquete.
+ */
+export class PickupShipmentUseCase {
+  constructor(
+    private readonly envios: ShipmentRepositoryPort,
+    private readonly drivers: DriverRepositoryPort,
+    private readonly storage: StoragePort,
+    private readonly audit: AuditService,
+    private readonly notificaciones: NotificationService,
+    private readonly reloj: () => Date = () => new Date(),
+  ) {}
+
+  async execute(actor: Actor, id: unknown, archivo?: ArchivoSubido): Promise<EnvioApi> {
+    if (!archivo) throw new ValidationError('Toma la foto del paquete al recogerlo');
+    if (!TIPOS_FOTO.includes(archivo.mimetype)) throw new ValidationError('La foto debe ser JPG, PNG o WebP');
+    const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
+    exigirEstado(envio, ['Asignado'], 'El paquete ya fue recogido o el servicio no está asignado');
+    const url = await this.storage.upload(archivo, `trackit/recogidas/${envio.id_envio}`);
+    await this.envios.registerPickup(envio.id_envio as number, url, this.reloj());
+    await this.audit.registrar(actor, { accion: 'Paquete recogido', entidad: 'Envío', idEntidad: envio.id_envio });
+    await this.notificaciones.notificar({
+      id_usuario: envio.id_cliente,
+      tipo: 'paquete_recogido',
+      titulo: 'Tu paquete va en camino',
+      mensaje: `El conductor recogió el envío #${envio.id_envio} y salió hacia ${envio.destino}. Mira la foto y síguelo en el mapa.`,
+      id_envio: envio.id_envio,
+    });
+    return presentarEnvio(await envioExistente(this.envios, envio.id_envio), { incluirPin: false, vistaConductor: true });
+  }
+}
+
+/** El conductor marca una parada intermedia como hecha. */
+export class CompleteStopUseCase {
+  constructor(
+    private readonly envios: ShipmentRepositoryPort,
+    private readonly drivers: DriverRepositoryPort,
+    private readonly paradas: ParadaRepositoryPort,
+    private readonly notificaciones: NotificationService,
+    private readonly reloj: () => Date = () => new Date(),
+  ) {}
+
+  async execute(actor: Actor, id: unknown, idParadaCrudo: unknown) {
+    const idParada = idValido(idParadaCrudo, 'id de la parada');
+    const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
+    exigirEstado(envio, ['En Ruta'], 'Inicia la ruta antes de marcar paradas');
+    const lista = await this.paradas.findByEnvio(envio.id_envio as number);
+    const parada = lista.find((p) => p.id_parada === idParada);
+    if (!parada) throw new NotFoundError('Esa parada no pertenece al envío');
+    if (!parada.completada_en) {
+      await this.paradas.completar(envio.id_envio as number, idParada, this.reloj());
+      this.notificaciones.emitir(envio.id_cliente, 'envio', { id_envio: envio.id_envio, evento: 'parada', orden: parada.orden });
+    }
+    return { paradas: (await this.paradas.findByEnvio(envio.id_envio as number)).map((p) => ({ ...p, completada_en: p.completada_en?.toISOString() ?? null })) };
+  }
+}
+
+/** Ida y vuelta: el conductor llegó al destino y ahora regresa al origen. */
+export class ArriveDestinationUseCase {
+  constructor(
+    private readonly envios: ShipmentRepositoryPort,
+    private readonly drivers: DriverRepositoryPort,
+    private readonly notificaciones: NotificationService,
+    private readonly reloj: () => Date = () => new Date(),
+  ) {}
+
+  async execute(actor: Actor, id: unknown): Promise<EnvioApi> {
+    const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
+    if (!envio.ida_y_vuelta) throw new ValidationError('Este envío no es de ida y vuelta');
+    exigirEstado(envio, ['En Ruta'], 'Inicia la ruta antes de marcar la llegada');
+    await this.envios.markDestinationVisited(envio.id_envio as number, this.reloj());
+    await this.notificaciones.notificar({
+      id_usuario: envio.id_cliente,
+      tipo: 'ruta_iniciada',
+      titulo: 'Llegó al destino y regresa',
+      mensaje: `El conductor llegó a ${envio.destino} con tu envío #${envio.id_envio} y ya viene de vuelta.`,
+      id_envio: envio.id_envio,
+    });
+    return presentarEnvio(await envioExistente(this.envios, envio.id_envio), { incluirPin: false, vistaConductor: true });
+  }
+}
+
+/** Trabajo programado: anuncia a los conductores los envíos programados que ya entran al tablero. */
+export class AnnounceScheduledUseCase {
+  constructor(
+    private readonly envios: ShipmentRepositoryPort,
+    private readonly pagos: PagoRepositoryPort,
+    private readonly publicador: PublicadorEnvios,
+    private readonly reloj: () => Date = () => new Date(),
+  ) {}
+
+  async execute(): Promise<number> {
+    const lista = await this.envios.findScheduledToAnnounce(this.reloj());
+    for (const e of lista) await this.publicador.publicar(e, await this.pagos.findByEnvio(e.id_envio as number));
+    return lista.length;
   }
 }

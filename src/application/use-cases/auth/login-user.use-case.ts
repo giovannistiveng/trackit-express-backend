@@ -4,7 +4,7 @@ import { UnauthorizedError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 
 export interface AuthResponse {
-  user: { id: number; nombre: string; correo: string; rol: string };
+  user: { id: number; nombre: string; correo: string; rol: string; correo_verificado: boolean };
   token: string;
 }
 
@@ -30,6 +30,6 @@ export class LoginUserUseCase {
     const rol = String(user.id_rol);
     const token = this.tokens.sign({ userId: user.id as number, email: user.correo, role: rol });
     await this.audit.registrar({ userId: user.id as number, email: user.correo }, { accion: 'Inicio de sesión', entidad: 'Usuario', idEntidad: user.id });
-    return { user: { id: user.id as number, nombre: user.nombre, correo: user.correo, rol }, token };
+    return { user: { id: user.id as number, nombre: user.nombre, correo: user.correo, rol, correo_verificado: user.correo_verificado !== false }, token };
   }
 }

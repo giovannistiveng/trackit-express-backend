@@ -23,6 +23,14 @@ export interface FiltroEnviosAdmin {
   tamano: number;
 }
 
+/** Lo que el cliente puede corregir mientras el envío está Pendiente (no cambia el precio). */
+export interface DetallesEditables {
+  tipo_carga?: string;
+  notas?: string | null;
+  destinatario_nombre?: string | null;
+  destinatario_telefono?: string | null;
+}
+
 export interface ResumenConductor {
   completados: number;
   ingresos_total: number;
@@ -37,9 +45,20 @@ export interface ShipmentRepositoryPort {
   /** Envíos del cliente con conductor y calificación, del más reciente al más antiguo. */
   findByClient(id_cliente: number, estados?: EstadoEnvio[]): Promise<EnvioDetallado[]>;
   findByDriver(id_conductor: number, estados?: EstadoEnvio[]): Promise<Envio[]>;
-  /** Envíos Pendiente sin conductor; si se dan categorías, solo los compatibles. */
-  /** Pendientes sin conductor. Con `categorias`, solo los de esas categorías o sin categoría. */
-  findAvailable(categorias?: VehicleCategory[]): Promise<Envio[]>;
+  /**
+   * Pendientes sin conductor, con el pago garantizado y (si son programados) a menos de una hora.
+   * Con `categorias`, solo los de esas categorías o sin categoría.
+   */
+  findAvailable(categorias?: VehicleCategory[], ahora?: Date): Promise<Envio[]>;
+  /** Envío por el token del enlace público de seguimiento. */
+  findByToken(token: string): Promise<Envio | null>;
+  updateDetalles(id_envio: number, d: DetallesEditables): Promise<void>;
+  /** Guarda la foto de recogida y pasa el envío a En Ruta (transacción). */
+  registerPickup(id_envio: number, url_foto: string, ahora: Date): Promise<void>;
+  markDestinationVisited(id_envio: number, ahora: Date): Promise<void>;
+  /** Programados que ya entran al tablero y todavía no se anunciaron a los conductores. */
+  findScheduledToAnnounce(ahora: Date): Promise<Envio[]>;
+  markScheduledAnnounced(id_envio: number): Promise<void>;
   /** Asigna el conductor (solo si el envío no tiene) y registra el estado. */
   updateStatus(id_envio: number, estado: EstadoEnvio, id_conductor?: number): Promise<void>;
 

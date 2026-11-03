@@ -20,6 +20,7 @@ import {
 import { SearchAuditUseCase } from '../../src/application/use-cases/admin/admin.use-cases';
 import { ForbiddenError, UnauthorizedError, ValidationError } from '../../src/shared/errors';
 import { ADMIN, CLIENTE, CONDUCTOR, FakeAuditRepo, FakeDrivers, FakeShipments, FakeVehicles, auditFalso, conductorAprobado, envio, notificacionesFalsas } from '../helpers/fakes';
+import { FakeChat, FakePagos, FakeParadas } from '../helpers/fakes';
 
 const storage = { upload: jest.fn(async () => 'https://cdn/x.jpg') };
 const JPG = { buffer: Buffer.from('x'), mimetype: 'image/jpeg', originalname: 'f.jpg' };
@@ -49,7 +50,7 @@ describe('catálogo', () => {
   });
   it('lista zonas', async () => {
     const z = [{ id_zona: 1, nombre_zona: 'A', tarifa_base: 1 }];
-    const repo = { findAll: async () => z, findById: async () => null, updateTarifa: async () => null, create: async () => z[0], update: async () => null };
+    const repo = { findAll: async () => z, findById: async () => null, updateTarifa: async () => null, create: async () => z[0], update: async () => null, remove: async () => null };
     expect(await new ListZonesUseCase(repo).execute()).toEqual([
       { id_zona: 1, nombre_zona: 'A', tarifa_base: 1, recargo: 1, centro: null, radio_km: 3, activa: true, descripcion: null },
     ]);
@@ -62,7 +63,7 @@ describe('catálogo', () => {
 
 describe('LoginUserUseCase', () => {
   it('rechaza correo o contraseña vacíos sin consultar', async () => {
-    const users = { findByEmail: jest.fn(), create: jest.fn(), findById: jest.fn(), updateProfile: jest.fn(), updatePassword: jest.fn() };
+    const users = { findByEmail: jest.fn(), create: jest.fn(), findById: jest.fn(), updateProfile: jest.fn(), updatePassword: jest.fn(), markEmailVerified: jest.fn() };
     const uc = new LoginUserUseCase(users, { hash: jest.fn(), compare: jest.fn() }, { sign: jest.fn(), verify: jest.fn() }, auditFalso().audit);
     await expect(uc.execute({ correo: '', password: 'x' })).rejects.toBeInstanceOf(UnauthorizedError);
     await expect(uc.execute({ correo: 5, password: 5 })).rejects.toBeInstanceOf(UnauthorizedError);
@@ -114,7 +115,7 @@ describe('TrackShipmentUseCase', () => {
     const s = new FakeShipments();
     const d = new FakeDrivers();
     s.envios.set(1, envio({ estado: 'Asignado', id_conductor: 99 }));
-    const uc = new TrackShipmentUseCase(s, d, new FakeVehicles());
+    const uc = new TrackShipmentUseCase(s, d, new FakeVehicles(), new FakeParadas(), new FakePagos(), new FakeChat());
     await expect(uc.execute(CONDUCTOR, 1)).rejects.toBeInstanceOf(ForbiddenError);
     conductorAprobado(d);
     await expect(uc.execute(CONDUCTOR, 1)).rejects.toBeInstanceOf(ForbiddenError);
@@ -122,7 +123,7 @@ describe('TrackShipmentUseCase', () => {
   it('el administrador ve el envío sin PIN y sin datos del conductor si no existe', async () => {
     const s = new FakeShipments();
     s.envios.set(1, envio({ estado: 'Asignado', id_conductor: 99 }));
-    const r = await new TrackShipmentUseCase(s, new FakeDrivers(), new FakeVehicles()).execute(ADMIN, 1);
+    const r = await new TrackShipmentUseCase(s, new FakeDrivers(), new FakeVehicles(), new FakeParadas(), new FakePagos(), new FakeChat()).execute(ADMIN, 1);
     expect(r.pin_seguridad).toBeUndefined();
     expect(r.conductor).toBeUndefined();
   });

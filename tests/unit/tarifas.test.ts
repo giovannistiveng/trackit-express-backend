@@ -30,7 +30,7 @@ describe('reglas de tarifa', () => {
   it('suma banderazo, km y minutos, redondea a 100 hacia arriba', () => {
     const d = calcularTarifaDetallada({ tarifa: MOTO, distanciaKm: 3.2, minutos: 9, recargoZona: 0, fecha: MEDIODIA });
     // 2.000 + 2.240 + 450 = 4.690 → 4.700
-    expect(d).toEqual({ categoria: 'Moto Express', banderazo: 2000, distancia: 2240, tiempo: 450, recargo_zona: 0, recargo_nocturno: 0, minimo_aplicado: false, total: 4700 });
+    expect(d).toEqual({ categoria: 'Moto Express', banderazo: 2000, distancia: 2240, tiempo: 450, recargo_zona: 0, paradas: 0, recargo_paradas: 0, ida_y_vuelta: false, recargo_nocturno: 0, minimo_aplicado: false, total: 4700 });
   });
 
   it('aplica la tarifa mínima en viajes cortos y el recargo nocturno del 20 %', () => {
@@ -86,6 +86,12 @@ function zonasFalsas(lista: ZonaTarifa[]): ZonaTarifaRepositoryPort & { lista: Z
     update: async (id, c) => {
       const z = lista.find((x) => x.id_zona === id);
       return z ? Object.assign(z, c) : null;
+    },
+    remove: async (id) => {
+      const i = lista.findIndex((x) => x.id_zona === id);
+      if (i < 0) return null;
+      lista.splice(i, 1);
+      return 'borrada';
     },
   };
 }

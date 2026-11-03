@@ -43,6 +43,9 @@ export const openApiSpec = {
     { name: 'Envíos (conductor)' },
     { name: 'Seguimiento' },
     { name: 'Conductores' },
+    { name: 'Pagos', description: 'Nequi (cobro al celular) y efectivo contra entrega; liquidación semanal a conductores' },
+    { name: 'Chat', description: 'Mensajes entre el cliente y el conductor asignado' },
+    { name: 'Tiempo real', description: 'Eventos al instante (SSE) y notificaciones push (web y app móvil)' },
     { name: 'Administración' },
     { name: 'Sistema' },
   ],
@@ -50,6 +53,17 @@ export const openApiSpec = {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
     schemas: {
       Error: { type: 'object', properties: { error: { type: 'string' }, statusCode: { type: 'integer' } }, required: ['error'] },
+      Pago: {
+        type: 'object',
+        properties: {
+          metodo: { type: 'string', enum: ['efectivo', 'nequi'] },
+          estado: { type: 'string', enum: ['pendiente', 'aprobado', 'rechazado', 'expirado', 'por_cobrar', 'cobrado', 'anulado', 'reembolso_pendiente', 'reembolsado'] },
+          monto: { type: 'number' },
+          telefono: { type: 'string', nullable: true, description: 'Enmascarado: *** *** 1234' },
+          mensaje: { type: 'string', nullable: true },
+          actualizado: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
       Desglose: {
         type: 'object',
         description: 'Partidas del precio en COP',
@@ -365,9 +379,31 @@ export const openApiSpec = {
                 destino_coords: coords,
                 categoria: ref('Categoria'),
                 notas: { type: 'string', maxLength: 300, description: 'Indicaciones para el conductor' },
+                metodo_pago: { type: 'string', enum: ['efectivo', 'nequi'], default: 'efectivo' },
+                telefono_nequi: { type: 'string', description: 'Celular Nequi (10 dígitos que empiezan por 3). Obligatorio con metodo_pago=nequi' },
+                destinatario_nombre: { type: 'string', maxLength: 120 },
+                destinatario_telefono: { type: 'string', description: '7 a 15 dígitos' },
+                paradas: {
+                  type: 'array',
+                  maxItems: 3,
+                  description: 'Paradas intermedias, ubicadas en el mapa ($ 1.500 c/u)',
+                  items: { type: 'object', required: ['direccion', 'coords'], properties: { direccion: { type: 'string' }, coords, notas: { type: 'string' } } },
+                },
+                ida_y_vuelta: { type: 'boolean', description: 'El conductor regresa al origen; la entrega se valida allí' },
+                fecha_programada: { type: 'string', format: 'date-time', description: 'Entre 30 minutos y 7 días después. Se publica a los conductores 1 hora antes' },
               },
             },
-            { origen: 'Casco Urbano', destino: 'Silvania', tipo_carga: 'Documentos', id_zona: 1, notas: 'Dejar en portería' },
+            {
+              origen: 'Parque principal',
+              destino: 'Silvania',
+              origen_coords: { lat: 4.3369, lon: -74.3638 },
+              destino_coords: { lat: 4.4036, lon: -74.3881 },
+              tipo_carga: 'Documentos',
+              metodo_pago: 'nequi',
+              telefono_nequi: '3001234567',
+              destinatario_nombre: 'Ana Ruiz',
+              destinatario_telefono: '3109876543',
+            },
           ),
         },
         responses: { '201': { description: 'Creado', content: json({ type: 'object', properties: { message: { type: 'string' }, envio: ref('Envio') } }) }, '400': E400(), '401': E401, '403': E403, '404': E404() },
@@ -390,6 +426,18 @@ export const openApiSpec = {
         security: seguro,
         parameters: [idEnvio],
         responses: { '200': { description: 'Envío con historial', content: json({ type: 'object', properties: { envio: ref('Envio') } }) }, '400': E400(), '401': E401, '403': E403, '404': E404('No existe el envío con id 99') },
+      },
+      patch: {
+        tags: ['Envíos (cliente)'],
+        summary: 'Editar un envío Pendiente · Cliente dueño',
+        description: 'Campos opcionales: tipo de carga, notas y datos de quien recibe.',
+        security: seguro,
+        parameters: [idEnvio],
+        requestBody: {
+          required: true,
+          content: json({ type: 'object', properties: { tipo_carga: { type: 'string' }, notas: { type: 'string' }, destinatario_nombre: { type: 'string' }, destinatario_telefono: { type: 'string' } } }, { notas: 'Timbre 2' }),
+        },
+        responses: { '200': { description: '{ message, envio }' }, '400': E400('Solo puedes editar un envío mientras ningún conductor lo ha tomado'), '401': E401, '403': E403, '404': E404() },
       },
     },
     '/api/envios/{id}/calificar': {
@@ -449,7 +497,7 @@ export const openApiSpec = {
       },
     },
     '/api/envios/{id}/iniciar-ruta': {
-      post: { tags: ['Envíos (conductor)'], summary: 'Iniciar ruta: Asignado → En Ruta · Conductor asignado', security: seguro, parameters: [idEnvio], responses: { '200': { description: 'En Ruta' }, '400': E400(), '401': E401, '403': E403, '404': E404() } },
+      post: { tags: ['Envíos (conductor)'], summary: 'Iniciar ruta: Asignado → En Ruta · Conductor asignado (requiere la foto de recogida; normalmente se usa /recogida)', security: seguro, parameters: [idEnvio], responses: { '200': { description: 'En Ruta' }, '400': E400(), '401': E401, '403': E403, '404': E404() } },
     },
     '/api/envios/{id}/evidencia': {
       post: {
@@ -468,7 +516,15 @@ export const openApiSpec = {
         summary: 'Validar la entrega con PIN y evidencia (CU-009) · Conductor asignado',
         security: seguro,
         parameters: [idEnvio],
-        requestBody: { required: true, content: json({ type: 'object', required: ['url_foto', 'pin_seguridad'], properties: { url_foto: { type: 'string' }, pin_seguridad: { type: 'string' } } }) },
+        description: 'Requiere las paradas completadas y, en ida y vuelta, la llegada al destino. Con pago en efectivo, `efectivo_recibido: true`.',
+        requestBody: {
+          required: true,
+          content: json({
+            type: 'object',
+            required: ['url_foto', 'pin_seguridad'],
+            properties: { url_foto: { type: 'string' }, pin_seguridad: { type: 'string' }, efectivo_recibido: { type: 'boolean' } },
+          }),
+        },
         responses: { '200': { description: 'Entregado' }, '400': E400('PIN incorrecto'), '401': E401, '403': E403, '404': E404() },
       },
     },
@@ -632,6 +688,20 @@ export const openApiSpec = {
         requestBody: { required: true, content: json(ref('ZonaEntrada'), { recargo: 2500, activa: true }) },
         responses: { '200': { description: 'Zona actualizada' }, '400': E400(), '401': E401, '403': E403, '404': E404() },
       },
+      delete: {
+        tags: ['Administración'],
+        summary: 'Eliminar una zona',
+        description: 'Si ningún envío la usa se borra; si tiene historial se archiva (deja de mostrarse y de cobrar). No se puede eliminar la única zona activa.',
+        security: seguro,
+        parameters: [idPath('id_zona')],
+        responses: {
+          '200': { description: '{ message, resultado: "borrada" | "archivada" }' },
+          '400': E400('No puedes eliminar la única zona activa'),
+          '401': E401,
+          '403': E403,
+          '404': E404(),
+        },
+      },
     },
     '/api/admin/tarifas/{categoria}': {
       put: {
@@ -651,6 +721,9 @@ export const openApiSpec = {
         parameters: [...pagina, { name: 'pendientes', in: 'query', schema: { type: 'boolean' } }],
         responses: { '200': { description: '{ items, total, pagina, tamano }' }, '401': E401, '403': E403 },
       },
+    },
+    '/api/admin/contactos/{id}': {
+      delete: { tags: ['Administración'], summary: 'Eliminar un mensaje de contacto', security: seguro, parameters: [idPath('id del mensaje')], responses: { '204': { description: 'Eliminado' }, '401': E401, '403': E403, '404': E404() } },
     },
     '/api/admin/contactos/{id}/atender': {
       post: { tags: ['Administración'], summary: 'Marcar un mensaje como atendido', security: seguro, parameters: [idPath('id del mensaje')], responses: { '204': { description: 'Atendido' }, '401': E401, '403': E403, '404': E404() } },
@@ -745,6 +818,10 @@ export const openApiSpec = {
           '401': E401,
         },
       },
+      delete: { tags: ['Notificaciones'], summary: 'Borrar las notificaciones ya leídas', security: seguro, responses: { '200': { description: '{ borradas }' }, '401': E401 } },
+    },
+    '/api/notificaciones/{id}': {
+      delete: { tags: ['Notificaciones'], summary: 'Borrar una notificación', security: seguro, parameters: [idPath('id de la notificación')], responses: { '204': { description: 'Borrada' }, '401': E401, '404': E404() } },
     },
     '/api/notificaciones/no-leidas': {
       get: { tags: ['Notificaciones'], summary: 'Cantidad sin leer (para la campana)', security: seguro, responses: { '200': { description: '{ no_leidas }' }, '401': E401 } },
@@ -754,6 +831,232 @@ export const openApiSpec = {
     },
     '/api/notificaciones/leer-todas': {
       post: { tags: ['Notificaciones'], summary: 'Marcar todas como leídas', security: seguro, responses: { '200': { description: '{ marcadas }' }, '401': E401 } },
+    },
+    // ----------------------------------------------------------- Cuenta: correo y contraseña
+    '/api/auth/olvide-password': {
+      post: {
+        tags: ['Autenticación'],
+        summary: 'Pedir el enlace para restablecer la contraseña',
+        description: 'Responde igual exista o no el correo (no revela cuentas). El enlace vence en 1 hora. Máximo 5 por minuto por IP.',
+        requestBody: { required: true, content: json({ type: 'object', required: ['correo'], properties: { correo: { type: 'string', format: 'email' } } }, { correo: 'ana@correo.co' }) },
+        responses: { '200': { description: 'Si el correo existe, se envió el enlace' }, '400': E400(), '429': error('Demasiadas solicitudes', 'Demasiadas peticiones, intenta más tarde') },
+      },
+    },
+    '/api/auth/restablecer-password': {
+      post: {
+        tags: ['Autenticación'],
+        summary: 'Elegir una contraseña nueva con el token del correo',
+        description: 'El token es de un solo uso. También verifica el correo y envía un aviso de seguridad.',
+        requestBody: { required: true, content: json({ type: 'object', required: ['token', 'nueva'], properties: { token: { type: 'string' }, nueva: { type: 'string', minLength: 8 } } }) },
+        responses: { '200': { description: 'Contraseña actualizada' }, '400': E400('El enlace venció o ya se usó. Pide uno nuevo') },
+      },
+    },
+    '/api/auth/verificar-correo': {
+      post: {
+        tags: ['Autenticación'],
+        summary: 'Confirmar el correo con el token enviado al registrarse (vence en 48 h)',
+        requestBody: { required: true, content: json({ type: 'object', required: ['token'], properties: { token: { type: 'string' } } }) },
+        responses: { '200': { description: 'Correo verificado' }, '400': E400('El enlace venció o ya se usó') },
+      },
+    },
+    '/api/usuarios/me/verificacion': {
+      post: { tags: ['Mi cuenta'], summary: 'Reenviar el correo de verificación (3 por minuto)', security: seguro, responses: { '200': { description: '{ message, enviado }' }, '401': E401 } },
+    },
+    // ----------------------------------------------------------- Seguimiento público
+    '/api/publico/seguimiento/{token}': {
+      get: {
+        tags: ['Sitio público'],
+        summary: 'Seguimiento para quien recibe (enlace para compartir por WhatsApp)',
+        description: 'Sin sesión. No incluye PIN, precio ni datos del cliente; del conductor solo el primer nombre, vehículo y placa.',
+        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Estado, recorrido, paradas y mapa' }, '404': E404('El enlace de seguimiento no existe o ya no está disponible') },
+      },
+    },
+    // ----------------------------------------------------------- Envíos: edición, recogida, paradas
+    '/api/envios/{id}/recogida': {
+      post: {
+        tags: ['Envíos (conductor)'],
+        summary: 'Foto del paquete al recogerlo: Asignado → En Ruta · Conductor asignado',
+        description: 'multipart/form-data, campo `archivo` (JPG, PNG o WebP). El cliente ve la foto y recibe un aviso.',
+        security: seguro,
+        parameters: [idEnvio],
+        requestBody: { required: true, content: { 'multipart/form-data': { schema: { type: 'object', properties: { archivo: { type: 'string', format: 'binary' } } } } } },
+        responses: { '200': { description: '{ message, envio }' }, '400': E400('Toma la foto del paquete al recogerlo'), '401': E401, '403': E403 },
+      },
+    },
+    '/api/envios/{id}/paradas/{idParada}/completar': {
+      post: {
+        tags: ['Envíos (conductor)'],
+        summary: 'Marcar una parada como hecha · Conductor asignado',
+        security: seguro,
+        parameters: [idEnvio, { name: 'idParada', in: 'path', required: true, schema: { type: 'integer' } }],
+        responses: { '200': { description: '{ paradas }' }, '400': E400('Inicia la ruta antes de marcar paradas'), '401': E401, '403': E403, '404': E404() },
+      },
+    },
+    '/api/envios/{id}/llegada-destino': {
+      post: {
+        tags: ['Envíos (conductor)'],
+        summary: 'Ida y vuelta: llegó al destino y regresa al origen · Conductor asignado',
+        security: seguro,
+        parameters: [idEnvio],
+        responses: { '200': { description: '{ message, envio }' }, '400': E400('Este envío no es de ida y vuelta'), '401': E401, '403': E403 },
+      },
+    },
+    // ----------------------------------------------------------- Pagos
+    '/api/envios/{id}/pago': {
+      get: {
+        tags: ['Pagos'],
+        summary: 'Estado del pago (consulta a Nequi si el cobro sigue pendiente)',
+        security: seguro,
+        parameters: [idEnvio],
+        responses: {
+          '200': {
+            description: 'Pago',
+            content: json(ref('Pago'), { metodo: 'nequi', estado: 'pendiente', monto: 12500, telefono: '*** *** 4567', mensaje: 'Acepta el pago en la notificación de tu app Nequi', actualizado: '2026-11-02T20:00:00.000Z' }),
+          },
+          '401': E401,
+          '403': E403,
+        },
+      },
+    },
+    '/api/envios/{id}/pago/reintentar': {
+      post: {
+        tags: ['Pagos'],
+        summary: 'Reenviar el cobro a Nequi (máximo 5 intentos) · Cliente dueño',
+        security: seguro,
+        parameters: [idEnvio],
+        requestBody: { content: json({ type: 'object', properties: { telefono: { type: 'string', description: 'Otro celular Nequi (opcional)' } } }) },
+        responses: { '200': { description: '{ message, pago }' }, '400': E400('Este envío ya está pagado'), '401': E401, '403': E403 },
+      },
+    },
+    '/api/envios/{id}/pago/efectivo': {
+      post: {
+        tags: ['Pagos'],
+        summary: 'Cambiar a pago en efectivo contra entrega · Cliente dueño',
+        description: 'El envío se publica de inmediato a los conductores.',
+        security: seguro,
+        parameters: [idEnvio],
+        responses: { '200': { description: '{ message, pago }' }, '400': E400('Este envío ya está pagado con Nequi'), '401': E401, '403': E403 },
+      },
+    },
+    '/api/conductores/me/billetera': {
+      get: {
+        tags: ['Pagos'],
+        summary: 'Lo pendiente por liquidar y las liquidaciones del conductor',
+        description: 'saldo = 80 % de lo pagado con Nequi − 20 % de comisión de lo cobrado en efectivo. Positivo: la plataforma paga; negativo: el conductor debe.',
+        security: seguro,
+        responses: { '200': { description: '{ pendiente, movimientos, liquidaciones }' }, '401': E401, '403': E403 },
+      },
+    },
+    '/api/admin/pagos': {
+      get: {
+        tags: ['Pagos'],
+        summary: 'Pagos de los envíos · Administrador',
+        security: seguro,
+        parameters: [
+          ...pagina,
+          { name: 'metodo', in: 'query', schema: { type: 'string', enum: ['efectivo', 'nequi'] } },
+          { name: 'estado', in: 'query', schema: { type: 'string', enum: ['pendiente', 'aprobado', 'rechazado', 'expirado', 'por_cobrar', 'cobrado', 'anulado', 'reembolso_pendiente', 'reembolsado'] } },
+        ],
+        responses: { '200': { description: '{ items, total, pagina, tamano }' }, '401': E401, '403': E403 },
+      },
+    },
+    '/api/admin/pagos/{idEnvio}/reembolso': {
+      post: {
+        tags: ['Pagos'],
+        summary: 'Reintentar la devolución de un pago Nequi de un envío cancelado · Administrador',
+        security: seguro,
+        parameters: [{ name: 'idEnvio', in: 'path', required: true, schema: { type: 'integer' } }],
+        responses: { '200': { description: '{ message, pago }' }, '400': E400(), '401': E401, '403': E403 },
+      },
+    },
+    '/api/admin/liquidaciones': {
+      get: {
+        tags: ['Pagos'],
+        summary: 'Liquidaciones semanales · Administrador',
+        security: seguro,
+        parameters: [...pagina, { name: 'estado', in: 'query', schema: { type: 'string', enum: ['pendiente', 'pagada'] } }],
+        responses: { '200': { description: '{ items, total, pagina, tamano }' }, '401': E401, '403': E403 },
+      },
+    },
+    '/api/admin/liquidaciones/generar': {
+      post: {
+        tags: ['Pagos'],
+        summary: 'Generar las liquidaciones (por defecto, la última semana completa lunes a domingo)',
+        description: 'Idempotente: una por conductor y semana. El servidor también las genera solo cada lunes.',
+        security: seguro,
+        requestBody: { content: json({ type: 'object', properties: { hasta: { type: 'string', format: 'date', description: 'AAAA-MM-DD, no futura' } } }) },
+        responses: { '201': { description: '{ message, liquidaciones }' }, '400': E400(), '401': E401, '403': E403 },
+      },
+    },
+    '/api/admin/liquidaciones/{id}/pagar': {
+      post: {
+        tags: ['Pagos'],
+        summary: 'Registrar el pago (o el cobro de la comisión) con la referencia de la transferencia',
+        security: seguro,
+        parameters: [idPath('id_liquidacion')],
+        requestBody: { required: true, content: json({ type: 'object', required: ['referencia'], properties: { referencia: { type: 'string', minLength: 3, maxLength: 100 } } }, { referencia: 'Nequi M1234567' }) },
+        responses: { '200': { description: '{ message, liquidacion }' }, '400': E400('Esta liquidación ya está pagada'), '401': E401, '403': E403, '404': E404() },
+      },
+    },
+    // ----------------------------------------------------------- Chat
+    '/api/envios/{id}/mensajes': {
+      get: {
+        tags: ['Chat'],
+        summary: 'Mensajes del envío (los marca como leídos)',
+        description: 'Cliente dueño, conductor asignado o administrador (solo lectura). `abierto` es true mientras el envío está Asignado o En Ruta.',
+        security: seguro,
+        parameters: [idEnvio],
+        responses: { '200': { description: '{ abierto, mensajes: [{ id, texto, autor, mio, leido, fecha }] }' }, '401': E401, '403': E403 },
+      },
+      post: {
+        tags: ['Chat'],
+        summary: 'Enviar un mensaje (máximo 500 caracteres; 30 por minuto)',
+        description: 'La otra parte lo recibe al instante por el canal de eventos y como notificación push.',
+        security: seguro,
+        parameters: [idEnvio],
+        requestBody: { required: true, content: json({ type: 'object', required: ['texto'], properties: { texto: { type: 'string', maxLength: 500 } } }, { texto: 'Ya llegué, estoy en la portería' }) },
+        responses: { '201': { description: 'Mensaje' }, '400': E400('El chat solo está abierto mientras el servicio está en curso'), '401': E401, '403': E403 },
+      },
+    },
+    // ----------------------------------------------------------- Tiempo real y push
+    '/api/eventos/ticket': {
+      post: {
+        tags: ['Tiempo real'],
+        summary: 'Ticket de un solo uso (60 s) para abrir el canal de eventos',
+        description: 'EventSource no puede enviar el token en un encabezado; por eso se usa este ticket en la URL.',
+        security: seguro,
+        responses: { '200': { description: '{ ticket }' }, '401': E401 },
+      },
+    },
+    '/api/eventos': {
+      get: {
+        tags: ['Tiempo real'],
+        summary: 'Canal de eventos (Server-Sent Events)',
+        description: 'Eventos: `conectado`, `notificacion`, `chat`, `envio`, `pago`. Envía un comentario cada 25 s para mantener viva la conexión.',
+        parameters: [{ name: 'ticket', in: 'query', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'text/event-stream' }, '401': E401 },
+      },
+    },
+    '/api/push/clave-publica': {
+      get: { tags: ['Tiempo real'], summary: 'Clave pública VAPID para suscribirse a Web Push', responses: { '200': { description: '{ clave }' } } },
+    },
+    '/api/push/suscripciones': {
+      post: {
+        tags: ['Tiempo real'],
+        summary: 'Registrar este dispositivo para recibir notificaciones push',
+        description: 'Navegador: `{ plataforma: "web", endpoint, keys: { p256dh, auth } }`. App Android/iOS (Capacitor + Firebase): `{ plataforma: "android" | "ios", token }`.',
+        security: seguro,
+        requestBody: { required: true, content: json({ type: 'object', required: ['plataforma'], properties: { plataforma: { type: 'string', enum: ['web', 'android', 'ios'] }, endpoint: { type: 'string' }, keys: { type: 'object' }, token: { type: 'string' } } }) },
+        responses: { '201': { description: 'Registrada' }, '400': E400(), '401': E401 },
+      },
+      delete: {
+        tags: ['Tiempo real'],
+        summary: 'Dejar de recibir push en este dispositivo',
+        security: seguro,
+        requestBody: { required: true, content: json({ type: 'object', properties: { endpoint: { type: 'string' }, token: { type: 'string' } } }) },
+        responses: { '204': { description: 'Eliminada' }, '400': E400(), '401': E401 },
+      },
     },
     '/api/logs/frontend': {
       post: {

@@ -1,28 +1,39 @@
+import { randomBytes } from 'crypto';
 import { Actor, ROLES } from '../../../domain/entities/actor.entity';
-import { COMISION_PLATAFORMA, ESTADOS_ACTIVOS_CLIENTE, ESTADOS_ENVIO, EstadoEnvio } from '../../../domain/entities/shipment.entity';
-import { VehicleCategory } from '../../../domain/entities/vehicle.entity';
-import { vehiculosQuePuedenLlevar } from '../../../domain/services/tarifas';
+import { ESTADOS_ACTIVOS_CLIENTE, ESTADOS_ENVIO, EstadoEnvio } from '../../../domain/entities/shipment.entity';
 import { coordenadasValidas } from '../../../domain/services/geo';
+import { ChatRepositoryPort, PagoRepositoryPort, ParadaRepositoryPort } from '../../../domain/repositories/platform.ports';
 import { DriverRepositoryPort } from '../../../domain/repositories/driver.repository.port';
-import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
+import { DetallesEditables, ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
 import { VehicleRepositoryPort } from '../../../domain/repositories/vehicle.repository.port';
-import { ForbiddenError, ValidationError } from '../../../shared/errors';
+import { ForbiddenError, NotFoundError, ValidationError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 import { NotificationService } from '../../services/notification.service';
 import { EnvioApi, presentarEnvio } from '../../services/envio.presenter';
 import { envioExistente, exigirEstado, exigirMismoId, exigirRol } from '../../services/access';
-import { textoOpcional, textoValido } from '../../validation';
+import { telefonoOpcional, textoOpcional, textoValido } from '../../validation';
 import { Cotizador, SolicitudRuta } from '../../services/cotizador';
+import { PagosService, PublicadorEnvios, celularNequi, metodoPagoValido } from '../../services/pagos.service';
+import { GetTrackingUseCase } from './driver-shipments.use-cases';
 
 export interface CreateShipmentInput extends SolicitudRuta {
   tipo_carga: unknown;
   notas?: unknown;
   id_cliente?: unknown;
+  metodo_pago?: unknown;
+  telefono_nequi?: unknown;
+  destinatario_nombre?: unknown;
+  destinatario_telefono?: unknown;
 }
 
 /** PIN de 4 dígitos (1000–9999). */
 export function generarPin(aleatorio: () => number = Math.random): string {
   return Math.floor(1000 + aleatorio() * 9000).toString();
+}
+
+/** Token del enlace público de seguimiento: 24 bytes aleatorios (imposible de adivinar). */
+export function generarTokenSeguimiento(): string {
+  return randomBytes(24).toString('base64url');
 }
 
 /** CU-006: solicitud de envío. El cliente sale del token y la tarifa se recalcula en el servidor. */
@@ -31,8 +42,9 @@ export class CreateShipmentUseCase {
     private readonly envios: ShipmentRepositoryPort,
     private readonly cotizador: Cotizador,
     private readonly audit: AuditService,
-    private readonly drivers?: DriverRepositoryPort,
-    private readonly notificaciones?: NotificationService,
+    private readonly paradas: ParadaRepositoryPort,
+    private readonly pagos: PagosService,
+    private readonly publicador: PublicadorEnvios,
   ) {}
 
   async execute(actor: Actor, input: CreateShipmentInput): Promise<EnvioApi> {
@@ -40,6 +52,10 @@ export class CreateShipmentUseCase {
     exigirMismoId(input.id_cliente, actor.userId, 'id_cliente');
     const tipoCarga = textoValido(input.tipo_carga, 'tipo_carga', 1, 80);
     const notas = textoOpcional(input.notas, 'notas', 300);
+    const metodo = metodoPagoValido(input.metodo_pago);
+    const telefonoNequi = metodo === 'nequi' ? celularNequi(input.telefono_nequi) : null;
+    const destinatarioNombre = textoOpcional(input.destinatario_nombre, 'destinatario_nombre', 120);
+    const destinatarioTelefono = telefonoOpcional(input.destinatario_telefono);
     const c = await this.cotizador.cotizar(input);
 
     const envio = await this.envios.create({
@@ -57,37 +73,24 @@ export class CreateShipmentUseCase {
       desglose: c.desglose,
       origen_coords: coordenadasValidas(c.ruta.origen) ? c.ruta.origen : null,
       destino_coords: coordenadasValidas(c.ruta.destino) ? c.ruta.destino : null,
+      metodo_pago: metodo,
+      token_seguimiento: generarTokenSeguimiento(),
+      destinatario_nombre: destinatarioNombre,
+      destinatario_telefono: destinatarioTelefono,
+      fecha_programada: c.fechaProgramada,
+      ida_y_vuelta: c.idaYVuelta,
     });
+    const id = envio.id_envio as number;
+    if (c.paradas.length > 0) await this.paradas.saveAll(id, c.paradas);
+    const pago = await this.pagos.iniciar(envio, metodo, telefonoNequi);
     await this.audit.registrar(actor, {
       accion: 'Envío creado',
       entidad: 'Envío',
-      idEntidad: envio.id_envio,
-      detalle: `${c.origen} → ${c.destino} · ${c.desglose.total} COP`,
+      idEntidad: id,
+      detalle: `${c.origen} → ${c.destino} · ${c.desglose.total} COP · ${metodo}${c.fechaProgramada ? ' · programado' : ''}`,
     });
-    await this.avisarConductores(envio.id_envio as number, c.categoria, c.destino, c.desglose.total);
-    return presentarEnvio(envio, { incluirPin: true });
-  }
-
-  /** Avisa a los conductores libres que pueden llevar el pedido. Nunca hace fallar la creación. */
-  private async avisarConductores(id: number, categoria: VehicleCategory | null, destino: string, total: number) {
-    if (!this.drivers || !this.notificaciones) return;
-    try {
-      const usuarios = await this.drivers.usuariosDisponibles(vehiculosQuePuedenLlevar(categoria));
-      const ganancia = Math.round(total * (1 - COMISION_PLATAFORMA));
-      await Promise.all(
-        usuarios.map((id_usuario) =>
-          this.notificaciones!.notificar({
-            id_usuario,
-            tipo: 'nuevo_servicio',
-            titulo: 'Nuevo servicio disponible',
-            mensaje: `Envío #${id} hacia ${destino}. Ganas $ ${ganancia.toLocaleString('es-CO')}.`,
-            id_envio: id,
-          }),
-        ),
-      );
-    } catch {
-      // Los conductores igual lo verán en su tablero
-    }
+    await this.publicador.publicar(envio, pago);
+    return presentarEnvio({ ...envio, paradas: c.paradas }, { incluirPin: true, pago });
   }
 }
 
@@ -120,6 +123,9 @@ export class TrackShipmentUseCase {
     private readonly envios: ShipmentRepositoryPort,
     private readonly drivers: DriverRepositoryPort,
     private readonly vehicles: VehicleRepositoryPort,
+    private readonly paradas: ParadaRepositoryPort,
+    private readonly pagos: PagoRepositoryPort,
+    private readonly chat: ChatRepositoryPort,
   ) {}
 
   async execute(actor: Actor, id: unknown): Promise<EnvioApi> {
@@ -134,12 +140,19 @@ export class TrackShipmentUseCase {
     }
     if (!permitido) throw new ForbiddenError('No tienes acceso a este envío');
 
-    const [historial, calificacion, conductor] = await Promise.all([
-      this.envios.getStatusHistory(envio.id_envio as number),
-      this.envios.findCalification(envio.id_envio as number),
+    const idEnvio = envio.id_envio as number;
+    const [historial, calificacion, conductor, paradas, pago, chatNoLeidos] = await Promise.all([
+      this.envios.getStatusHistory(idEnvio),
+      this.envios.findCalification(idEnvio),
       this.resumenConductor(envio.id_conductor),
+      this.paradas.findByEnvio(idEnvio),
+      this.pagos.findByEnvio(idEnvio),
+      this.chat.countUnread(idEnvio, actor.userId),
     ]);
-    return presentarEnvio(envio, { incluirPin: esDueno, historial, calificacion, conductor });
+    return presentarEnvio(
+      { ...envio, paradas },
+      { incluirPin: esDueno, historial, calificacion, conductor, pago, chatNoLeidos, vistaConductor: actor.role === ROLES.CONDUCTOR },
+    );
   }
 
   private async resumenConductor(idConductor?: number) {
@@ -204,6 +217,7 @@ export class CancelShipmentUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
+    private readonly pagos: PagosService,
   ) {}
 
   async execute(actor: Actor, id: unknown, motivoCrudo?: unknown): Promise<EnvioApi> {
@@ -219,6 +233,7 @@ export class CancelShipmentUseCase {
     }
 
     await this.envios.cancel(envio.id_envio as number, motivo);
+    const pago = await this.pagos.alCancelar(envio.id_envio as number);
     await this.audit.registrar(actor, {
       accion: 'Envío cancelado',
       entidad: 'Envío',
@@ -226,15 +241,95 @@ export class CancelShipmentUseCase {
       detalle: motivo ?? (esAdmin ? 'Por administración' : 'Por el cliente'),
     });
 
+    const devolucion =
+      pago?.estado === 'reembolsado' ? ' Te devolvimos el dinero a tu Nequi.' : pago?.estado === 'reembolso_pendiente' ? ' Procesaremos la devolución de tu pago Nequi.' : '';
     const aviso = `El envío #${envio.id_envio} (${envio.origen} → ${envio.destino}) fue cancelado${motivo ? `: ${motivo}` : '.'}`;
     if (esAdmin) {
-      await this.notificaciones.notificar({ id_usuario: envio.id_cliente, tipo: 'envio_cancelado', titulo: 'Tu envío fue cancelado', mensaje: aviso, id_envio: envio.id_envio });
+      await this.notificaciones.notificar({ id_usuario: envio.id_cliente, tipo: 'envio_cancelado', titulo: 'Tu envío fue cancelado', mensaje: aviso + devolucion, id_envio: envio.id_envio });
     }
     const conductor = envio.id_conductor ? await this.drivers.findById(envio.id_conductor) : null;
     if (conductor) {
       await this.notificaciones.notificar({ id_usuario: conductor.id_usuario, tipo: 'envio_cancelado', titulo: 'Servicio cancelado', mensaje: aviso, id_envio: envio.id_envio });
     }
     const actualizado = await envioExistente(this.envios, envio.id_envio);
-    return presentarEnvio(actualizado, { incluirPin: false });
+    return presentarEnvio(actualizado, { incluirPin: false, pago });
+  }
+}
+
+/** El cliente corrige datos que no cambian el precio mientras ningún conductor tomó el envío. */
+export class EditShipmentUseCase {
+  constructor(
+    private readonly envios: ShipmentRepositoryPort,
+    private readonly audit: AuditService,
+  ) {}
+
+  async execute(actor: Actor, id: unknown, input: Record<string, unknown>): Promise<EnvioApi> {
+    exigirRol(actor, ROLES.CLIENTE);
+    const envio = await envioExistente(this.envios, id);
+    if (envio.id_cliente !== actor.userId) throw new ForbiddenError('Solo puedes editar tus propios envíos');
+    exigirEstado(envio, ['Pendiente'], 'Solo puedes editar un envío mientras ningún conductor lo ha tomado');
+    const cambios: DetallesEditables = {};
+    if (input.tipo_carga !== undefined) cambios.tipo_carga = textoValido(input.tipo_carga, 'tipo_carga', 1, 80);
+    if (input.notas !== undefined) cambios.notas = textoOpcional(input.notas, 'notas', 300);
+    if (input.destinatario_nombre !== undefined) cambios.destinatario_nombre = textoOpcional(input.destinatario_nombre, 'destinatario_nombre', 120);
+    if (input.destinatario_telefono !== undefined) cambios.destinatario_telefono = telefonoOpcional(input.destinatario_telefono);
+    if (Object.keys(cambios).length === 0) throw new ValidationError('No hay cambios para guardar');
+    await this.envios.updateDetalles(envio.id_envio as number, cambios);
+    await this.audit.registrar(actor, { accion: 'Envío editado', entidad: 'Envío', idEntidad: envio.id_envio, detalle: Object.keys(cambios).join(', ') });
+    return presentarEnvio(await envioExistente(this.envios, envio.id_envio), { incluirPin: true });
+  }
+}
+
+export interface SeguimientoPublico {
+  codigo: number;
+  estado: string;
+  origen: string;
+  destino: string;
+  destinatario: string | null;
+  fecha_programada: string | null;
+  ida_y_vuelta: boolean;
+  historial: { estado: string; fecha: string }[];
+  conductor: { nombre: string; vehiculo: string | null; placa: string | null } | null;
+  paradas: { orden: number; direccion: string; completada: boolean }[];
+  mapa: Awaited<ReturnType<GetTrackingUseCase['porEnvio']>> | null;
+}
+
+/**
+ * Enlace público para quien recibe: estado, mapa en vivo y conductor, sin datos sensibles
+ * (ni PIN, ni precio, ni datos del cliente). Solo el primer nombre del conductor.
+ */
+export class PublicTrackingUseCase {
+  constructor(
+    private readonly envios: ShipmentRepositoryPort,
+    private readonly drivers: DriverRepositoryPort,
+    private readonly vehicles: VehicleRepositoryPort,
+    private readonly paradas: ParadaRepositoryPort,
+    private readonly mapa: GetTrackingUseCase,
+  ) {}
+
+  async execute(tokenCrudo: unknown): Promise<SeguimientoPublico> {
+    const token = typeof tokenCrudo === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(tokenCrudo) ? tokenCrudo : '';
+    const envio = token ? await this.envios.findByToken(token) : null;
+    if (!envio) throw new NotFoundError('El enlace de seguimiento no existe o ya no está disponible');
+    const id = envio.id_envio as number;
+    const [historial, paradas] = await Promise.all([this.envios.getStatusHistory(id), this.paradas.findByEnvio(id)]);
+    let conductor: SeguimientoPublico['conductor'] = null;
+    if (envio.id_conductor) {
+      const [c, vehiculos] = await Promise.all([this.drivers.findById(envio.id_conductor), this.vehicles.findByDriverId(envio.id_conductor)]);
+      if (c) conductor = { nombre: c.nombre.split(' ')[0], vehiculo: vehiculos[0]?.categoria ?? null, placa: vehiculos[0]?.placa ?? null };
+    }
+    return {
+      codigo: id,
+      estado: envio.estado ?? 'Pendiente',
+      origen: envio.origen,
+      destino: envio.destino,
+      destinatario: envio.destinatario_nombre?.split(' ')[0] ?? null,
+      fecha_programada: envio.fecha_programada?.toISOString() ?? null,
+      ida_y_vuelta: !!envio.ida_y_vuelta,
+      historial: historial.map((h) => ({ estado: h.estado, fecha: h.fecha_cambio.toISOString() })),
+      conductor,
+      paradas: paradas.map((p) => ({ orden: p.orden, direccion: p.direccion, completada: !!p.completada_en })),
+      mapa: envio.estado === 'Cancelado' ? null : await this.mapa.porEnvio(envio),
+    };
   }
 }

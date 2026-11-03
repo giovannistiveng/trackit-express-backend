@@ -50,3 +50,21 @@ export class MarkAllNotificationsReadUseCase {
     return { marcadas: await this.repo.markAllRead(actor.userId) };
   }
 }
+
+export class DeleteNotificationUseCase {
+  constructor(private readonly repo: NotificationRepositoryPort) {}
+
+  async execute(actor: Actor, idCrudo: unknown): Promise<void> {
+    const id = idValido(idCrudo, 'id de la notificación');
+    if (!(await this.repo.delete(id, actor.userId))) throw new NotFoundError('No existe esa notificación');
+  }
+}
+
+/** Borra todas las notificaciones ya leídas del usuario. */
+export class DeleteReadNotificationsUseCase {
+  constructor(private readonly repo: NotificationRepositoryPort) {}
+
+  async execute(actor: Actor) {
+    return { borradas: await this.repo.deleteRead(actor.userId) };
+  }
+}

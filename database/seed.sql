@@ -35,3 +35,6 @@ INSERT INTO Usuario (nombre, correo, password_hash, id_rol) VALUES
     ('Administrador Sistema', 'admin@trackit.com.co', '$2a$10$9DBt5o56nGOPPDbVZE4nv.4xhynqYZhS2JeqLepCq0TDYaTuzW6oi', (SELECT id_rol FROM Rol WHERE nombre_rol = 'Administrador'))
 ON CONFLICT (correo) DO UPDATE SET password_hash = EXCLUDED.password_hash
 WHERE Usuario.password_hash LIKE '$2b$10$rX2k8J8J8%';
+
+-- El administrador inicial tiene el correo verificado
+UPDATE Usuario SET correo_verificado = TRUE WHERE correo = 'admin@trackit.com.co' AND correo_verificado = FALSE;

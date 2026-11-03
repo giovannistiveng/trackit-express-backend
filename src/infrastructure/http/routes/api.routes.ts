@@ -27,6 +27,17 @@ export function crearRutasApi(c: Contenedor): Router {
     const result = await c.auth.login.execute(req.body ?? {});
     res.status(200).json({ message: 'Inicio de sesión exitoso', ...result });
   });
+  r.post('/auth/olvide-password', rateLimit(5, 60_000), async (req: Request, res: Response) => {
+    await c.auth.olvidePassword.execute(req.body ?? {});
+    res.json({ message: 'Si el correo está registrado, te enviamos un enlace para restablecer la contraseña.' });
+  });
+  r.post('/auth/restablecer-password', rateLimit(10, 60_000), async (req: Request, res: Response) => {
+    await c.auth.restablecerPassword.execute(req.body ?? {});
+    res.json({ message: 'Contraseña actualizada. Ya puedes iniciar sesión.' });
+  });
+  r.post('/auth/verificar-correo', rateLimit(20, 60_000), async (req: Request, res: Response) => {
+    res.json({ message: 'Correo verificado', ...(await c.auth.verificarCorreo.execute(req.body ?? {})) });
+  });
 
   // --- Sitio público (sin sesión) ---
   r.get('/publico/estadisticas', async (_req: Request, res: Response) => {
@@ -37,6 +48,10 @@ export function crearRutasApi(c: Contenedor): Router {
   });
   r.get('/publico/tarifas', async (_req: Request, res: Response) => {
     res.json(await c.catalogo.tarifas.execute());
+  });
+  r.get('/publico/seguimiento/:token', rateLimit(60, 60_000), async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(await c.envios.seguimientoPublico.execute(req.params.token));
   });
   r.post('/contacto', rateLimit(5, 60_000), async (req: Request, res: Response) => {
     const r2 = await c.publico.contacto.execute(req.body ?? {});
@@ -54,6 +69,49 @@ export function crearRutasApi(c: Contenedor): Router {
     await c.usuarios.cambiarPassword.execute(actorDe(req), req.body ?? {});
     res.json({ message: 'Contraseña actualizada' });
   });
+  r.post('/usuarios/me/verificacion', auth, rateLimit(3, 60_000), async (req: Request, res: Response) => {
+    const r2 = await c.auth.enviarVerificacion.execute(actorDe(req));
+    res.json({ message: r2.enviado ? 'Te enviamos un nuevo enlace de verificación' : 'Tu correo ya está verificado', ...r2 });
+  });
+
+  // --- Tiempo real (SSE) y notificaciones push ---
+  r.post('/eventos/ticket', auth, rateLimit(30, 60_000), (req: Request, res: Response) => {
+    res.json({ ticket: c.tickets.emitir(actorDe(req)) });
+  });
+  r.get('/eventos', (req: Request, res: Response) => {
+    const actor = c.tickets.canjear(req.query.ticket);
+    if (!actor) {
+      res.status(401).json({ error: 'El ticket de eventos no es válido o venció', statusCode: 401 });
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 5000\n\n');
+    res.write(`event: conectado\ndata: ${JSON.stringify({ usuario: actor.userId })}\n\n`);
+    const desuscribir = c.bus.suscribir(actor.userId, (e) => {
+      res.write(`event: ${e.tipo}\ndata: ${JSON.stringify(e.datos)}\n\n`);
+    });
+    const latido = setInterval(() => res.write(': latido\n\n'), 25_000);
+    req.on('close', () => {
+      clearInterval(latido);
+      desuscribir();
+    });
+  });
+  r.get('/push/clave-publica', (_req: Request, res: Response) => {
+    res.json({ clave: c.clavePush || null });
+  });
+  r.post('/push/suscripciones', auth, rateLimit(20, 60_000), async (req: Request, res: Response) => {
+    await c.push.suscribir.execute(actorDe(req), req.body ?? {});
+    res.status(201).json({ message: 'Notificaciones activadas en este dispositivo' });
+  });
+  r.delete('/push/suscripciones', auth, async (req: Request, res: Response) => {
+    await c.push.desuscribir.execute(actorDe(req), req.body ?? {});
+    res.status(204).end();
+  });
 
   // --- Notificaciones (cualquier rol) ---
   r.get('/notificaciones', auth, async (req: Request, res: Response) => {
@@ -67,6 +125,13 @@ export function crearRutasApi(c: Contenedor): Router {
   });
   r.post('/notificaciones/:id/leer', auth, async (req: Request, res: Response) => {
     await c.notificaciones.leer.execute(actorDe(req), req.params.id);
+    res.status(204).end();
+  });
+  r.delete('/notificaciones', auth, async (req: Request, res: Response) => {
+    res.json(await c.notificaciones.borrarLeidas.execute(actorDe(req)));
+  });
+  r.delete('/notificaciones/:id', auth, async (req: Request, res: Response) => {
+    await c.notificaciones.borrar.execute(actorDe(req), req.params.id);
     res.status(204).end();
   });
 
@@ -98,6 +163,15 @@ export function crearRutasApi(c: Contenedor): Router {
     const envio = await c.envios.calificar.execute(actorDe(req), req.params.id, req.body?.rating, req.body?.comentario);
     res.json({ message: 'Calificación registrada exitosamente', envio });
   });
+  r.patch('/envios/:id', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
+    res.json({ message: 'Envío actualizado', envio: await c.envios.editar.execute(actorDe(req), req.params.id, req.body ?? {}) });
+  });
+  r.post('/envios/:id/pago/reintentar', auth, autorizar(CLIENTE), rateLimit(10, 60_000), async (req: Request, res: Response) => {
+    res.json({ message: 'Te enviamos el cobro a Nequi', pago: await c.pagos.reintentar.execute(actorDe(req), req.params.id, req.body ?? {}) });
+  });
+  r.post('/envios/:id/pago/efectivo', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
+    res.json({ message: 'Pagarás en efectivo al conductor', pago: await c.pagos.efectivo.execute(actorDe(req), req.params.id) });
+  });
   r.post('/envios/:id/cancelar', auth, autorizar(CLIENTE, ADMIN), async (req: Request, res: Response) => {
     const envio = await c.envios.cancelar.execute(actorDe(req), req.params.id, req.body?.motivo);
     res.json({ message: 'Envío cancelado', envio });
@@ -111,6 +185,15 @@ export function crearRutasApi(c: Contenedor): Router {
   r.post('/envios/:id/iniciar-ruta', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
     const envio = await c.envios.iniciarRuta.execute(actorDe(req), req.params.id);
     res.json({ message: 'Ruta iniciada', envio });
+  });
+  r.post('/envios/:id/recogida', auth, autorizar(CONDUCTOR), subirArchivo(TIPOS_FOTO), async (req: Request, res: Response) => {
+    res.json({ message: 'Paquete recogido, ruta iniciada', envio: await c.envios.recoger.execute(actorDe(req), req.params.id, archivoDe(req)) });
+  });
+  r.post('/envios/:id/paradas/:idParada/completar', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
+    res.json(await c.envios.completarParada.execute(actorDe(req), req.params.id, req.params.idParada));
+  });
+  r.post('/envios/:id/llegada-destino', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
+    res.json({ message: 'Llegada al destino registrada', envio: await c.envios.llegadaDestino.execute(actorDe(req), req.params.id) });
   });
   r.post('/envios/:id/evidencia', auth, autorizar(CONDUCTOR), subirArchivo(TIPOS_FOTO), async (req: Request, res: Response) => {
     const resultado = await c.envios.evidencia.execute(actorDe(req), req.params.id, archivoDe(req));
@@ -129,6 +212,15 @@ export function crearRutasApi(c: Contenedor): Router {
   r.get('/envios/:id/ubicacion', auth, async (req: Request, res: Response) => {
     res.json(await c.envios.ultimaUbicacion.execute(actorDe(req), req.params.id));
   });
+  r.get('/envios/:id/pago', auth, async (req: Request, res: Response) => {
+    res.json(await c.pagos.estado.execute(actorDe(req), req.params.id));
+  });
+  r.get('/envios/:id/mensajes', auth, async (req: Request, res: Response) => {
+    res.json(await c.envios.chat.execute(actorDe(req), req.params.id));
+  });
+  r.post('/envios/:id/mensajes', auth, autorizar(CLIENTE, CONDUCTOR), rateLimit(30, 60_000), async (req: Request, res: Response) => {
+    res.status(201).json(await c.envios.enviarMensaje.execute(actorDe(req), req.params.id, req.body ?? {}));
+  });
   r.get('/envios/:id/seguimiento', auth, async (req: Request, res: Response) => {
     res.json(await c.envios.seguimiento.execute(actorDe(req), req.params.id));
   });
@@ -143,6 +235,9 @@ export function crearRutasApi(c: Contenedor): Router {
   });
   r.get('/conductores/me/resumen', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
     res.json(await c.conductores.resumen.execute(actorDe(req)));
+  });
+  r.get('/conductores/me/billetera', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
+    res.json(await c.pagos.billetera.execute(actorDe(req)));
   });
   r.get('/conductores/envios/historial', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
     res.json({ envios: await c.conductores.historial.execute(actorDe(req), req.query.limite) });
@@ -191,11 +286,35 @@ export function crearRutasApi(c: Contenedor): Router {
   r.put('/admin/zonas/:id', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     res.json({ message: 'Zona actualizada', zona: await c.admin.tarifa.execute(actorDe(req), req.params.id, req.body ?? {}) });
   });
+  r.delete('/admin/zonas/:id', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    const r2 = await c.admin.borrarZona.execute(actorDe(req), req.params.id);
+    res.json({ message: r2.resultado === 'borrada' ? 'Zona eliminada' : 'Zona eliminada (se conserva en el historial de envíos)', ...r2 });
+  });
+  r.get('/admin/pagos', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    res.json(await c.pagos.listar.execute(actorDe(req), req.query));
+  });
+  r.post('/admin/pagos/:idEnvio/reembolso', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    res.json({ message: 'Reembolso procesado', pago: await c.pagos.reembolso.execute(actorDe(req), req.params.idEnvio) });
+  });
+  r.get('/admin/liquidaciones', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    res.json(await c.pagos.liquidaciones.execute(actorDe(req), req.query));
+  });
+  r.post('/admin/liquidaciones/generar', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    const creadas = await c.pagos.generarLiquidaciones.execute(actorDe(req), req.body ?? {});
+    res.status(201).json({ message: creadas.length ? `Se generaron ${creadas.length} liquidaciones` : 'No hay entregas pendientes por liquidar', liquidaciones: creadas });
+  });
+  r.post('/admin/liquidaciones/:id/pagar', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    res.json({ message: 'Liquidación pagada', liquidacion: await c.pagos.pagarLiquidacion.execute(actorDe(req), req.params.id, req.body ?? {}) });
+  });
   r.get('/admin/contactos', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     res.json(await c.admin.contactos.execute(actorDe(req), req.query));
   });
   r.post('/admin/contactos/:id/atender', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     await c.admin.atenderContacto.execute(actorDe(req), req.params.id);
+    res.status(204).end();
+  });
+  r.delete('/admin/contactos/:id', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    await c.admin.borrarContacto.execute(actorDe(req), req.params.id);
     res.status(204).end();
   });
 

@@ -7,6 +7,7 @@ import { gananciaConductor } from '../../src/domain/entities/shipment.entity';
 import { coordenadasValidas, haversineKm, minutosEstimados } from '../../src/domain/services/geo';
 import { ValidationError } from '../../src/shared/errors';
 import { ADMIN, CLIENTE, CONDUCTOR, FakeDrivers, FakeShipments, auditFalso, conductorAprobado, envio, notificacionesFalsas } from '../helpers/fakes';
+import { pagosFalsos } from '../helpers/fakes';
 
 const FUSA = { lat: 4.3369, lon: -74.3638 };
 const SILVANIA = { lat: 4.4033, lon: -74.3878 };
@@ -98,10 +99,11 @@ describe('CancelShipmentUseCase', () => {
     conductorAprobado(d, 5);
     s.envios.set(1, envio({ estado: 'En Ruta', id_conductor: 5 }));
     const { repo, servicio } = notificacionesFalsas();
-    const r = await new CancelShipmentUseCase(s, d, auditFalso().audit, servicio).execute(ADMIN, 1, 'Vía cerrada');
+    const pagos = pagosFalsos(s, d, servicio);
+    const r = await new CancelShipmentUseCase(s, d, auditFalso().audit, servicio, pagos.servicio).execute(ADMIN, 1, 'Vía cerrada');
     expect(r.estado).toBe('Cancelado');
     expect(repo.avisos.map((a) => a.id_usuario).sort()).toEqual([CLIENTE.userId, CONDUCTOR.userId].sort());
-    await expect(new CancelShipmentUseCase(s, d, auditFalso().audit, servicio).execute(CONDUCTOR, 1)).rejects.toThrow();
+    await expect(new CancelShipmentUseCase(s, d, auditFalso().audit, servicio, pagos.servicio).execute(CONDUCTOR, 1)).rejects.toThrow();
   });
 });
 
