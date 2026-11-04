@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'crypto';
 import { Actor } from '../../../domain/entities/actor.entity';
 import { User } from '../../../domain/entities/user.entity';
-import { MailerPort, TokenRepositoryPort } from '../../../domain/repositories/platform.ports';
-import { PasswordHasherPort } from '../../../domain/repositories/services.port';
-import { UserRepositoryPort } from '../../../domain/repositories/user.repository.port';
+import { MailerPort, TokenRepositoryPort } from '../../../domain/ports/platform.ports';
+import { PasswordHasherPort } from '../../../domain/ports/services.port';
+import { UserRepositoryPort } from '../../../domain/ports/user.repository.port';
 import { NotFoundError, ValidationError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 import { correoContrasenaCambiada, correoRecuperacion, correoVerificacion } from '../../services/plantillas-correo';

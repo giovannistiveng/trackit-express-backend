@@ -1,4 +1,4 @@
-import { MensajePush, PushRepositoryPort, PushSenderPort } from '../../domain/repositories/platform.ports';
+import { MensajePush, PushRepositoryPort, PushSenderPort } from '../../domain/ports/platform.ports';
 
 /** Envía una notificación push a todos los dispositivos del usuario y limpia los que ya no sirven. */
 export class PushService {

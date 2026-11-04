@@ -1,8 +1,8 @@
 import { Actor, ROLES } from '../../domain/entities/actor.entity';
 import { Conductor } from '../../domain/entities/driver.entity';
 import { Envio } from '../../domain/entities/shipment.entity';
-import { DriverRepositoryPort } from '../../domain/repositories/driver.repository.port';
-import { ShipmentRepositoryPort } from '../../domain/repositories/shipment.repository.port';
+import { DriverRepositoryPort } from '../../domain/ports/driver.repository.port';
+import { ShipmentRepositoryPort } from '../../domain/ports/shipment.repository.port';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../shared/errors';
 import { idValido } from '../validation';
 

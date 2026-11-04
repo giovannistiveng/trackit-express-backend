@@ -6,7 +6,7 @@ import {
   PuntosConocidos,
   ResultadoDistancia,
   SugerenciaDireccion,
-} from '../../domain/repositories/services.port';
+} from '../../domain/ports/services.port';
 import { coordenadasValidas, haversineKm, minutosEstimados } from '../../domain/services/geo';
 import { logger } from '../../shared/logger';
 

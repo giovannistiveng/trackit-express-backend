@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { FiltroAuditoria, RegistroAuditoria } from '../../../domain/entities/auditoria.entity';
-import { AuditRepositoryPort } from '../../../domain/repositories/audit.repository.port';
+import { AuditRepositoryPort } from '../../../domain/ports/audit.repository.port';
+import { patronBusqueda } from '../pg-utils';
 
 interface AuditoriaRow {
   id_auditoria: number;
@@ -26,7 +27,7 @@ export class AuditRepositoryPostgres implements AuditRepositoryPort {
   }
 
   async search(f: FiltroAuditoria): Promise<{ items: RegistroAuditoria[]; total: number }> {
-    const patron = f.texto ? `%${f.texto.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+    const patron = f.texto ? patronBusqueda(f.texto) : null;
     const r = await this.pool.query<AuditoriaRow>(
       `SELECT a.*, COUNT(*) OVER() AS total
        FROM Auditoria a

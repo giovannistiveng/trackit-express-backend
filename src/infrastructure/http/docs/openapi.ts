@@ -228,7 +228,8 @@ export const openApiSpec = {
                 id_rol: { type: 'integer', enum: [2, 3] },
               },
             },
-            { nombre: 'Ana Gómez', correo: 'ana@correo.co', password: 'Clave1234', id_rol: 2 },
+            // Datos de ejemplo de la documentación, no son credenciales reales. NOSONAR
+            { nombre: 'Ana Gómez', correo: 'ana@correo.co', password: 'Clave1234', id_rol: 2 }, // eslint-disable-line sonarjs/no-hardcoded-passwords
           ),
         },
         responses: {
@@ -242,7 +243,7 @@ export const openApiSpec = {
       post: {
         tags: ['Autenticación'],
         summary: 'Iniciar sesión (CU-002)',
-        requestBody: { required: true, content: json({ type: 'object', required: ['correo', 'password'], properties: { correo: { type: 'string' }, password: { type: 'string' } } }, { correo: 'admin@trackit.com.co', password: 'Admin2026*' }) },
+        requestBody: { required: true, content: json({ type: 'object', required: ['correo', 'password'], properties: { correo: { type: 'string' }, password: { type: 'string' } } }, { correo: 'admin@trackit.com.co', password: 'Admin2026*' }) }, // eslint-disable-line sonarjs/no-hardcoded-passwords -- ejemplo de la documentación NOSONAR
         responses: {
           '200': { description: 'Token JWT', content: json({ type: 'object', properties: { message: { type: 'string' }, user: ref('Usuario'), token: { type: 'string' } } }) },
           '401': error('Credenciales incorrectas', 'Credenciales inválidas'),

@@ -1,16 +1,16 @@
 import { Pool } from 'pg';
 import { ZonaTarifa } from '../../../domain/entities/zona-tarifa.entity';
-import { DatosZona, ZonaTarifaRepositoryPort } from '../../../domain/repositories/zona-tarifa.repository.port';
+import { DatosZona, ZonaTarifaRepositoryPort } from '../../../domain/ports/zona-tarifa.repository.port';
 import { ValidationError } from '../../../shared/errors';
-import { esViolacionUnica } from '../pg-errors';
+import { NumeroPg, esViolacionUnica } from '../pg-utils';
 
 interface ZonaRow {
   id_zona: number;
   nombre_zona: string;
   tarifa_base: string | number;
-  centro_lat?: string | number | null;
-  centro_lon?: string | number | null;
-  radio_km?: string | number | null;
+  centro_lat?: NumeroPg;
+  centro_lon?: NumeroPg;
+  radio_km?: NumeroPg;
   activa?: boolean | null;
   descripcion?: string | null;
 }

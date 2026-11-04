@@ -1,6 +1,6 @@
 import { ROLES } from '../../../domain/entities/actor.entity';
-import { UserRepositoryPort } from '../../../domain/repositories/user.repository.port';
-import { PasswordHasherPort } from '../../../domain/repositories/services.port';
+import { UserRepositoryPort } from '../../../domain/ports/user.repository.port';
+import { PasswordHasherPort } from '../../../domain/ports/services.port';
 import { ValidationError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 import { esContrasenaSegura, esCorreo, textoValido } from '../../validation';

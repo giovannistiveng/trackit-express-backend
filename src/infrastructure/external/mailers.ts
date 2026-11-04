@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto';
 import { mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import nodemailer, { Transporter } from 'nodemailer';
-import { CorreoSaliente, MailerPort } from '../../domain/repositories/platform.ports';
+import { CorreoSaliente, MailerPort } from '../../domain/ports/platform.ports';
 import { logger } from '../../shared/logger';
 
 const log = logger.child('Correo');
@@ -54,7 +54,8 @@ export class BuzonLocalMailer implements MailerPort {
     const ruta = path.join(this.carpeta, nombre);
     writeFileSync(ruta, m.html, 'utf8');
     const enlace = /https?:\/\/[^\s"'<>]+/.exec(m.texto)?.[0];
-    log.warn(`[Modo desarrollo] Correo para ${m.para}: "${m.asunto}" guardado en ${ruta}${enlace ? ` · Enlace: ${enlace}` : ''}`);
+    const detalle = enlace ? ` · Enlace: ${enlace}` : '';
+    log.warn(`[Modo desarrollo] Correo para ${m.para}: "${m.asunto}" guardado en ${ruta}${detalle}`);
   }
 }
 

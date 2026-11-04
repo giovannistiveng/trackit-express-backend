@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { Actor } from '../../../domain/entities/actor.entity';
-import { TokenServicePort } from '../../../domain/repositories/services.port';
+import { TokenServicePort } from '../../../domain/ports/services.port';
 import { ForbiddenError, UnauthorizedError } from '../../../shared/errors';
 
 /** Exige un JWT válido en Authorization: Bearer <token> y deja el usuario en req.actor. */

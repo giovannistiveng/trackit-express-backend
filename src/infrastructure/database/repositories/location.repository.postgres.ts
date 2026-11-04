@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { Ubicacion } from '../../../domain/entities/ubicacion.entity';
-import { LocationRepositoryPort } from '../../../domain/repositories/location.repository.port';
+import { LocationRepositoryPort } from '../../../domain/ports/location.repository.port';
 
 export class LocationRepositoryPostgres implements LocationRepositoryPort {
   constructor(private readonly pool: Pool) {}

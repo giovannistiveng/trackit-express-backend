@@ -2,10 +2,10 @@ import { randomBytes } from 'crypto';
 import { Actor, ROLES } from '../../../domain/entities/actor.entity';
 import { ESTADOS_ACTIVOS_CLIENTE, ESTADOS_ENVIO, EstadoEnvio } from '../../../domain/entities/shipment.entity';
 import { coordenadasValidas } from '../../../domain/services/geo';
-import { ChatRepositoryPort, PagoRepositoryPort, ParadaRepositoryPort } from '../../../domain/repositories/platform.ports';
-import { DriverRepositoryPort } from '../../../domain/repositories/driver.repository.port';
-import { DetallesEditables, ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
-import { VehicleRepositoryPort } from '../../../domain/repositories/vehicle.repository.port';
+import { ChatRepositoryPort, PagoRepositoryPort, ParadaRepositoryPort } from '../../../domain/ports/platform.ports';
+import { DriverRepositoryPort } from '../../../domain/ports/driver.repository.port';
+import { DetallesEditables, ShipmentRepositoryPort } from '../../../domain/ports/shipment.repository.port';
+import { VehicleRepositoryPort } from '../../../domain/ports/vehicle.repository.port';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 import { NotificationService } from '../../services/notification.service';
@@ -211,6 +211,11 @@ export class RateShipmentUseCase {
  * (nadie lo ha tomado). El administrador puede cancelar cualquiera que no haya terminado,
  * con motivo obligatorio. Se avisa a la otra parte.
  */
+const TEXTO_DEVOLUCION: Record<string, string> = {
+  reembolsado: ' Te devolvimos el dinero a tu Nequi.',
+  reembolso_pendiente: ' Procesaremos la devolución de tu pago Nequi.',
+};
+
 export class CancelShipmentUseCase {
   constructor(
     private readonly envios: ShipmentRepositoryPort,
@@ -241,9 +246,9 @@ export class CancelShipmentUseCase {
       detalle: motivo ?? (esAdmin ? 'Por administración' : 'Por el cliente'),
     });
 
-    const devolucion =
-      pago?.estado === 'reembolsado' ? ' Te devolvimos el dinero a tu Nequi.' : pago?.estado === 'reembolso_pendiente' ? ' Procesaremos la devolución de tu pago Nequi.' : '';
-    const aviso = `El envío #${envio.id_envio} (${envio.origen} → ${envio.destino}) fue cancelado${motivo ? `: ${motivo}` : '.'}`;
+    const devolucion = TEXTO_DEVOLUCION[pago?.estado ?? ''] ?? '';
+    const cierre = motivo ? `: ${motivo}` : '.';
+    const aviso = `El envío #${envio.id_envio} (${envio.origen} → ${envio.destino}) fue cancelado${cierre}`;
     if (esAdmin) {
       await this.notificaciones.notificar({ id_usuario: envio.id_cliente, tipo: 'envio_cancelado', titulo: 'Tu envío fue cancelado', mensaje: aviso + devolucion, id_envio: envio.id_envio });
     }

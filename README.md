@@ -6,14 +6,40 @@ cancelaciones, notificaciones, ganancias del conductor, aprobación de conductor
 
 ## Stack
 
-- Node.js 20+, Express 5, TypeScript estricto
-- PostgreSQL
-- Arquitectura hexagonal: `domain` (entidades y puertos) → `application` (casos de uso) → `infrastructure` (PostgreSQL, HTTP, OpenStreetMap, Cloudinary)
+- Node.js 22, Express 5, TypeScript estricto
+- PostgreSQL 16
+- Arquitectura hexagonal (ver abajo), verificada por pruebas automáticas
+- Docker: imagen multi-etapa y `deploy/docker-compose.yml` con base de datos, API y web
 - JWT con autorización por rol, bcrypt, Helmet, límite de peticiones en login y registro
 - OpenStreetMap (Nominatim + Haversine) para distancias
 - Cloudinary o disco local para documentos y fotos de entrega
 - Swagger (OpenAPI 3) en `/api/docs`
 - Jest + Supertest, cobertura para SonarQube
+
+## Arquitectura hexagonal
+
+```
+src/
+├── domain/            Núcleo: no depende de nada
+│   ├── entities/      Envío, Pago, Usuario, Conductor…
+│   ├── services/      Reglas puras (tarifas, distancias)
+│   └── ports/         Interfaces que el núcleo necesita (repositorios, pasarela de pago, correo, push…)
+├── application/       Casos de uso: solo dependen de domain y shared
+│   ├── use-cases/     Un caso de uso por acción (crear envío, cobrar con Nequi, liquidar…)
+│   └── services/      Orquestación compartida (cotizador, pagos, notificaciones, presentación)
+├── infrastructure/    Adaptadores (implementan los puertos)
+│   ├── http/          Adaptador de entrada: Express, rutas, middlewares, Swagger
+│   ├── database/      PostgreSQL: repositorios, migrador y CLI
+│   ├── external/      Nequi, correo SMTP, Cloudinary/disco, OpenStreetMap
+│   ├── realtime/      SSE (bus de eventos) y push (Web Push, Firebase)
+│   ├── security/      JWT y bcrypt
+│   └── container.ts   Raíz de composición: conecta cada puerto con su adaptador
+├── config/            Lectura del entorno (.env)
+└── shared/            Errores y logger
+```
+
+Las dependencias solo apuntan hacia adentro. `tests/unit/arquitectura.test.ts` falla si el dominio o
+los casos de uso importan infraestructura, configuración o librerías como Express o pg.
 
 ## Puesta en marcha
 
@@ -25,23 +51,31 @@ npm run db:migrate          # base existente de una versión anterior: aplica la
 npm run dev                 # http://localhost:3000  ·  documentación en /api/docs
 ```
 
+¿Sin PostgreSQL instalado? `docker compose up -d` levanta solo la base de datos para desarrollo.
+Para correr **toda la aplicación en Docker** (base de datos + API + web) sigue [`deploy/README.md`](deploy/README.md).
+
 La base de datos (`DB_NAME`) debe existir antes de `db:setup` (por ejemplo, créala en pgAdmin).
 
 **Administrador inicial:** `admin@trackit.com.co` / `Admin2026*`. Cámbialo después del primer despliegue.
 
 ## Scripts
 
-| Script                  | Qué hace                                                    |
-| ----------------------- | ----------------------------------------------------------- |
-| `npm run dev`           | Servidor con recarga automática                             |
-| `npm run build`         | Compila a `dist/`                                           |
-| `npm start`             | Ejecuta la versión compilada (producción)                   |
-| `npm run typecheck`     | Verifica tipos (código y pruebas)                           |
-| `npm test`              | Pruebas unitarias y de integración                          |
-| `npm run test:coverage` | Pruebas con cobertura (`coverage/lcov.info` para SonarQube) |
-| `npm run db:setup`      | Crea el esquema y carga `seed.sql`                          |
-| `npm run db:migrate`    | Aplica las migraciones pendientes de `database/migrations`  |
-| `npm run sonar`         | Envía el análisis a SonarQube                               |
+| Script                     | Qué hace                                                    |
+| -------------------------- | ----------------------------------------------------------- |
+| `npm run dev`              | Servidor con recarga automática                             |
+| `npm run build`            | Compila a `dist/`                                           |
+| `npm start`                | Ejecuta la versión compilada (producción)                   |
+| `npm run typecheck`        | Verifica tipos (código y pruebas)                           |
+| `npm run lint`             | ESLint con las reglas de SonarJS (las mismas de SonarQube)  |
+| `npm test`                 | Todas las pruebas                                           |
+| `npm run test:unit`        | Solo unitarias (no necesitan base de datos)                 |
+| `npm run test:integration` | Solo integración (API completa contra PostgreSQL)           |
+| `npm run test:coverage`    | Pruebas con cobertura (`coverage/lcov.info` para SonarQube) |
+| `npm run db:setup`         | Crea el esquema y carga `seed.sql`                          |
+| `npm run db:migrate`       | Aplica las migraciones pendientes de `database/migrations`  |
+| `npm run db:prepare`       | (compilado) crea o migra según el caso; lo usa Docker       |
+| `npm run lint:sonar`       | Guarda los hallazgos de ESLint en `reports/` para SonarQube |
+| `npm run sonar`            | Envía el análisis a SonarQube                               |
 
 ## Variables de entorno
 
@@ -195,7 +229,7 @@ Contraseñas, PIN y tokens se guardan como `[OCULTO]`. Los archivos rotan cada d
 npm test
 ```
 
-- **Unitarias:** casos de uso con repositorios en memoria, middlewares, seguridad y adaptadores externos simulados.
+- **Unitarias:** casos de uso con repositorios en memoria, middlewares, seguridad, migrador, adaptadores externos simulados y las reglas de arquitectura.
 - **Integración:** la API completa con Supertest contra PostgreSQL. Usan la base `TEST_DB_NAME` (por defecto `trackit_test`), que **se borra y recrea**; créala vacía una vez. Por seguridad, solo borran bases cuyo nombre contiene "test". Sin PostgreSQL disponible, se omiten con un aviso.
 
 ## Calidad con SonarQube
@@ -204,17 +238,21 @@ npm test
 2. Entra a http://localhost:9000 (admin/admin), crea el proyecto `trackit-express-backend` y genera un token.
 3. Ejecuta:
    ```bash
+   npm run lint:sonar
    npm run test:coverage
    npm run sonar -- -Dsonar.host.url=http://localhost:9000 -Dsonar.token=TU_TOKEN
    ```
+   Antes de analizar, `npm run lint` debe quedar sin hallazgos: usa las reglas de SonarJS, el mismo
+   motor que SonarQube aplica a TypeScript. La duplicación de código está en 0 % (jscpd).
    El escáner (`sonarqube-scanner` 5) necesita Node.js 22.12 o superior y descarga el motor de análisis la primera vez.
 
 ## Despliegue
 
-1. Crea la base PostgreSQL y define `DATABASE_URL` (y `DB_SSL=true` si aplica).
-2. Define `NODE_ENV=production`, `JWT_SECRET`, `CORS_ORIGINS` y `PUBLIC_URL`; configura Cloudinary si el disco del servidor no es persistente.
-3. `npm ci && npm run build && npm run db:setup` (o `db:migrate` si la base ya existía).
-4. Comando de inicio: `npm start`. Verificación: `GET /health`.
+- **Con Docker (recomendado):** [`deploy/README.md`](deploy/README.md) — compose completo, plan para una
+  VM Ubuntu en VirtualBox y paso a la nube, copias de seguridad y credenciales de cada API externa.
+- **Sin Docker:** crea la base PostgreSQL y define `DATABASE_URL` (y `DB_SSL=true` si aplica), `NODE_ENV=production`,
+  `JWT_SECRET`, `CORS_ORIGINS` y `PUBLIC_URL`; luego `npm ci && npm run build && npm run db:prepare && npm start`.
+  Verificación: `GET /health`.
 
 ## Ramas
 

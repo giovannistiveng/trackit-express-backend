@@ -1,9 +1,9 @@
 import { Coordenadas } from '../../../domain/entities/shipment.entity';
 import { TarifaVehiculo } from '../../../domain/entities/tarifa-vehiculo.entity';
 import { ZonaTarifa } from '../../../domain/entities/zona-tarifa.entity';
-import { GeocodingPort, SugerenciaDireccion } from '../../../domain/repositories/services.port';
-import { TarifaVehiculoRepositoryPort } from '../../../domain/repositories/tarifa-vehiculo.repository.port';
-import { ZonaTarifaRepositoryPort } from '../../../domain/repositories/zona-tarifa.repository.port';
+import { GeocodingPort, SugerenciaDireccion } from '../../../domain/ports/services.port';
+import { TarifaVehiculoRepositoryPort } from '../../../domain/ports/tarifa-vehiculo.repository.port';
+import { ZonaTarifaRepositoryPort } from '../../../domain/ports/zona-tarifa.repository.port';
 import { CATEGORIA_POR_DEFECTO, HORA_FIN_NOCHE, HORA_INICIO_NOCHE, RECARGO_NOCTURNO } from '../../../domain/services/tarifas';
 import { DesgloseTarifa } from '../../../domain/services/tarifas';
 import { ValidationError } from '../../../shared/errors';

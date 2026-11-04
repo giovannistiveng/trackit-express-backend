@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
-import { TokenPayload, TokenServicePort } from '../../domain/repositories/services.port';
+import { TokenPayload, TokenServicePort } from '../../domain/ports/services.port';
 
 export type JWTPayload = TokenPayload;
 

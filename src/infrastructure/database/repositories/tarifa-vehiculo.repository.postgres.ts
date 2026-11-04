@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { TarifaVehiculo } from '../../../domain/entities/tarifa-vehiculo.entity';
 import { CATEGORIAS_VEHICULO, VehicleCategory } from '../../../domain/entities/vehicle.entity';
-import { TarifaVehiculoRepositoryPort } from '../../../domain/repositories/tarifa-vehiculo.repository.port';
+import { TarifaVehiculoRepositoryPort } from '../../../domain/ports/tarifa-vehiculo.repository.port';
 
 interface TarifaRow {
   categoria: VehicleCategory;

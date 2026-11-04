@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ArchivoSubido, StoragePort } from '../../domain/repositories/storage.port';
+import { ArchivoSubido, StoragePort } from '../../domain/ports/storage.port';
 
 const EXTENSION: Record<string, string> = { 'image/jpeg': '.jpg', 'image/png': '.png', 'application/pdf': '.pdf' };
 

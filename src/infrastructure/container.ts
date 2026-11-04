@@ -41,7 +41,7 @@ import {
 import { SubscribePushUseCase, UnsubscribePushUseCase } from '../application/use-cases/realtime/push.use-cases';
 import { PagosService, PublicadorEnvios } from '../application/services/pagos.service';
 import { PushService } from '../application/services/push.service';
-import { MailerPort, PaymentGatewayPort, PushSenderPort } from '../domain/repositories/platform.ports';
+import { MailerPort, PaymentGatewayPort, PushSenderPort } from '../domain/ports/platform.ports';
 import {
   ChatRepositoryPostgres,
   LiquidacionRepositoryPostgres,
@@ -104,8 +104,8 @@ import {
 import { GetPublicStatsUseCase, ListPublicZonesUseCase, SubmitContactUseCase } from '../application/use-cases/public/public.use-cases';
 import { ContactRepositoryPostgres } from './database/repositories/contact.repository.postgres';
 import { NotificationRepositoryPostgres } from './database/repositories/notification.repository.postgres';
-import { DistancePort, GeocodingPort, PasswordHasherPort, TokenServicePort } from '../domain/repositories/services.port';
-import { StoragePort } from '../domain/repositories/storage.port';
+import { DistancePort, GeocodingPort, PasswordHasherPort, TokenServicePort } from '../domain/ports/services.port';
+import { StoragePort } from '../domain/ports/storage.port';
 import { AuditRepositoryPostgres } from './database/repositories/audit.repository.postgres';
 import { DocumentoConductorRepositoryPostgres } from './database/repositories/documento-conductor.repository.postgres';
 import { DriverRepositoryPostgres } from './database/repositories/driver.repository.postgres';
@@ -164,7 +164,7 @@ export function crearContenedor(d: Dependencias) {
   const tickets = new TicketsEventos();
   const pushRepo = new PushRepositoryPostgres(d.pool);
   // En pruebas (pushSenders inyectados) no se generan ni guardan claves
-  const claves = d.pushSenders ? { publica: '', privada: '' } : clavesVapid(config.push.vapidPublica, config.push.vapidPrivada);
+  const claves = d.pushSenders ? { publica: '', privada: '' } : clavesVapid(config.push.vapidPublica, config.push.vapidPrivada, config.push.vapidArchivo);
   const senders: PushSenderPort[] =
     d.pushSenders ??
     [new WebPushSender(claves, config.push.vapidContacto), FcmSender.desdeArchivo(config.push.fcmCuentaServicio)].filter(

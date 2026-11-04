@@ -222,10 +222,12 @@ describe('Push y tiempo real', () => {
     expect(clavesVapid('', '', path.join('/no/existe/dir', 'v.json')).publica).toEqual(expect.any(String));
   });
 
+  const estadoFcm = (url: string) => (url.includes('malo') ? 404 : 200);
+
   it('FCM: firma la cuenta de servicio, cachea el token y limpia tokens inválidos', async () => {
     const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
     const http = jest.fn(async (url: string) =>
-      url.includes('oauth2') ? respuesta(200, { access_token: 'ya29', expires_in: 3600 }) : respuesta(url.includes('malo') ? 404 : 200, {}),
+      url.includes('oauth2') ? respuesta(200, { access_token: 'ya29', expires_in: 3600 }) : respuesta(estadoFcm(url), {}),
     );
     const fcm = new FcmSender({ project_id: 'trackit', client_email: 'sa@trackit.iam', private_key: privateKey }, http as unknown as typeof fetch);
     const m = { titulo: 'T', cuerpo: 'C', url: '/' };
@@ -248,7 +250,9 @@ describe('Push y tiempo real', () => {
         { id_usuario: 1, plataforma: 'web' as const, endpoint: 'w' },
         { id_usuario: 1, plataforma: 'ios' as const, endpoint: 'i' },
       ],
-      delete: async (e: string) => void borrados.push(e),
+      delete: async (e: string) => {
+        borrados.push(e);
+      },
     };
     const fallos: unknown[] = [];
     const web = { plataformas: ['web' as const], enviar: async () => false };
@@ -302,7 +306,9 @@ describe('Push y tiempo real', () => {
 
   it('suscripción push: valida la plataforma y el formato', async () => {
     const guardados: unknown[] = [];
-    const uc = new SubscribePushUseCase({ save: async (s) => void guardados.push(s), findByUser: async () => [], delete: async () => undefined });
+    const uc = new SubscribePushUseCase({ save: async (s) => {
+        guardados.push(s);
+      }, findByUser: async () => [], delete: async () => undefined });
     await uc.execute(CLIENTE, { plataforma: 'ios', token: 'apns-fcm-token-1234567890' });
     expect(guardados).toEqual([{ id_usuario: CLIENTE.userId, plataforma: 'ios', endpoint: 'apns-fcm-token-1234567890' }]);
     await expect(uc.execute(CLIENTE, { endpoint: 'https://push.x/abcdefghij', keys: { p256dh: 1 } })).rejects.toThrow(ValidationError);

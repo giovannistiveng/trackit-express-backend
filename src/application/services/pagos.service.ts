@@ -1,8 +1,8 @@
 import { ANTICIPO_PROGRAMADO_MIN, COMISION_PLATAFORMA, Envio, MetodoPago } from '../../domain/entities/shipment.entity';
 import { Pago, VIGENCIA_PAGO_NEQUI_MIN, pagoPermitePublicar } from '../../domain/entities/pago.entity';
-import { DriverRepositoryPort } from '../../domain/repositories/driver.repository.port';
-import { PagoRepositoryPort, PaymentGatewayPort } from '../../domain/repositories/platform.ports';
-import { ShipmentRepositoryPort } from '../../domain/repositories/shipment.repository.port';
+import { DriverRepositoryPort } from '../../domain/ports/driver.repository.port';
+import { PagoRepositoryPort, PaymentGatewayPort } from '../../domain/ports/platform.ports';
+import { ShipmentRepositoryPort } from '../../domain/ports/shipment.repository.port';
 import { vehiculosQuePuedenLlevar } from '../../domain/services/tarifas';
 import { ValidationError } from '../../shared/errors';
 import { NotificationService } from './notification.service';

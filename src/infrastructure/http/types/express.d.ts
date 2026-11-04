@@ -1,4 +1,4 @@
-import { Actor } from '../../domain/entities/actor.entity';
+import { Actor } from '../../../domain/entities/actor.entity';
 
 declare module 'express-serve-static-core' {
   interface Request {

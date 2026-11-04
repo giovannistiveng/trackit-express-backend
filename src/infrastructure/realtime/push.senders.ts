@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import jwt from 'jsonwebtoken';
 import webpush from 'web-push';
-import { MensajePush, PlataformaPush, PushSenderPort, SuscripcionPush } from '../../domain/repositories/platform.ports';
+import { MensajePush, PlataformaPush, PushSenderPort, SuscripcionPush } from '../../domain/ports/platform.ports';
 import { logger } from '../../shared/logger';
 
 const log = logger.child('Push');

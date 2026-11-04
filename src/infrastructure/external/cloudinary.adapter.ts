@@ -1,5 +1,5 @@
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
-import { ArchivoSubido, StoragePort } from '../../domain/repositories/storage.port';
+import { ArchivoSubido, StoragePort } from '../../domain/ports/storage.port';
 
 export interface CloudinaryConfig {
   cloudName: string;

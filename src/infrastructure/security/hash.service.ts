@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { config } from '../../config';
-import { PasswordHasherPort } from '../../domain/repositories/services.port';
+import { PasswordHasherPort } from '../../domain/ports/services.port';
 
 export class HashService implements PasswordHasherPort {
   hash(password: string): Promise<string> {

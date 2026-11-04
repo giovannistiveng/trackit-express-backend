@@ -32,7 +32,8 @@ beforeEach(() => {
 
 const conBd = (nombre: string, fn: () => Promise<void>) =>
   it(nombre, async () => {
-    if (!disponible) return;
+    // Sin PostgreSQL la prueba se omite (queda registrado que no había base de datos)
+    if (!disponible) return expect(disponible).toBe(false);
     await fn();
   });
 
@@ -243,7 +244,7 @@ describe('Notificaciones al instante', () => {
     const e = (await crear(s.token)).body.envio;
     await request(app).post(`/api/envios/${e.id_envio}/cancelar`).set(auth(admin.token)).send({ motivo: 'Prueba push' });
     await new Promise((r) => setTimeout(r, 50));
-    expect(pushEnviados.map((p) => p.endpoint).sort()).toEqual(['fcm-token-de-prueba-1234567890', 'https://push.ejemplo.com/abc123', 'https://push.ejemplo.com/vencido']);
+    expect(pushEnviados.map((p) => p.endpoint).sort((a, b) => a.localeCompare(b))).toEqual(['fcm-token-de-prueba-1234567890', 'https://push.ejemplo.com/abc123', 'https://push.ejemplo.com/vencido']);
     pushEnviados.length = 0;
     await request(app).post(`/api/envios/${(await crear(s.token)).body.envio.id_envio}/cancelar`).set(auth(admin.token)).send({ motivo: 'Otra' });
     await new Promise((r) => setTimeout(r, 50));

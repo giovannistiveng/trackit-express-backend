@@ -81,7 +81,8 @@ function serializeMeta(meta: unknown): string {
   if (clean && typeof clean === 'object' && 'stack' in (clean as Record<string, unknown>)) {
     const { stack, ...rest } = clean as Record<string, unknown>;
     const restStr = Object.keys(rest).length ? ` ${JSON.stringify(rest)}` : '';
-    return `${restStr}${stack ? `\n${String(stack)}` : ''}`;
+    const pila = stack ? '\n' + String(stack) : '';
+    return restStr + pila;
   }
   try {
     return ` ${JSON.stringify(clean)}`;
@@ -169,7 +170,7 @@ export class Logger {
       this.purgeOldFiles();
     } catch (err) {
       this.fileWritingDisabled = true;
-      // eslint-disable-next-line no-console
+       
       console.error(`[logger] No se pudo preparar la carpeta de logs "${this.opts.dir}":`, err);
     }
   }
@@ -205,7 +206,7 @@ export class Logger {
       if (LEVEL_WEIGHT[level] >= LEVEL_WEIGHT.WARN) this.errorStream?.write(line + '\n');
     } catch (err) {
       this.fileWritingDisabled = true;
-      // eslint-disable-next-line no-console
+       
       console.error('[logger] Se desactiva la escritura en archivo por un error:', err);
     }
   }
@@ -221,7 +222,7 @@ export class Logger {
 
     const onError = (err: Error) => {
       this.fileWritingDisabled = true;
-      // eslint-disable-next-line no-console
+       
       console.error('[logger] Error escribiendo el archivo de log:', err.message);
     };
 

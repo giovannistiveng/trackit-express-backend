@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { AsuntoContacto, MensajeContacto } from '../../../domain/entities/contacto.entity';
-import { ContactRepositoryPort } from '../../../domain/repositories/contact.repository.port';
+import { ContactRepositoryPort } from '../../../domain/ports/contact.repository.port';
 
 interface ContactoRow {
   id_contacto: number;

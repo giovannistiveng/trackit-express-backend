@@ -43,6 +43,8 @@ export const config = {
     vapidPublica: process.env.VAPID_PUBLIC_KEY || '',
     vapidPrivada: process.env.VAPID_PRIVATE_KEY || '',
     vapidContacto: process.env.VAPID_SUBJECT || 'mailto:soporte@trackit.com.co',
+    /** Dónde guardar las claves generadas (en Docker, dentro de un volumen). */
+    vapidArchivo: process.env.VAPID_FILE || '.vapid.json',
     /** Ruta del JSON de la cuenta de servicio de Firebase (app Android/iOS con Capacitor). */
     fcmCuentaServicio: process.env.FCM_SERVICE_ACCOUNT_FILE || '',
   },

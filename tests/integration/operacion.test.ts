@@ -20,7 +20,8 @@ afterAll(async () => {
 
 const conBd = (nombre: string, fn: () => Promise<void>) =>
   it(nombre, async () => {
-    if (!disponible) return;
+    // Sin PostgreSQL la prueba se omite (queda registrado que no había base de datos)
+    if (!disponible) return expect(disponible).toBe(false);
     await fn();
   });
 

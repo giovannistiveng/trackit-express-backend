@@ -9,8 +9,8 @@ import { logger } from '../../src/shared/logger';
 import { crearContenedor } from '../../src/infrastructure/container';
 import { crearApp } from '../../src/infrastructure/http/app';
 import { LocalDiskStorage } from '../../src/infrastructure/external/local-disk.storage';
-import { DistancePort, GeocodingPort } from '../../src/domain/repositories/services.port';
-import { CorreoSaliente, EstadoGateway, MailerPort, PaymentGatewayPort, PushSenderPort } from '../../src/domain/repositories/platform.ports';
+import { DistancePort, GeocodingPort } from '../../src/domain/ports/services.port';
+import { CorreoSaliente, EstadoGateway, MailerPort, PaymentGatewayPort, PushSenderPort } from '../../src/domain/ports/platform.ports';
 
 export const DIR_UPLOADS = path.join(os.tmpdir(), 'trackit-test-uploads');
 

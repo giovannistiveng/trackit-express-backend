@@ -13,7 +13,7 @@ import {
   SuscripcionPush,
   TipoToken,
   TokenRepositoryPort,
-} from '../../../domain/repositories/platform.ports';
+} from '../../../domain/ports/platform.ports';
 
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
 const fecha = (v: unknown) => (v ? new Date(v as string) : null);

@@ -1,10 +1,10 @@
 import { Actor, ROLES } from '../../../domain/entities/actor.entity';
 import { LARGO_MAXIMO_MENSAJE, MensajeChat } from '../../../domain/entities/chat.entity';
 import { Envio } from '../../../domain/entities/shipment.entity';
-import { DriverRepositoryPort } from '../../../domain/repositories/driver.repository.port';
-import { ChatRepositoryPort } from '../../../domain/repositories/platform.ports';
-import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
-import { UserRepositoryPort } from '../../../domain/repositories/user.repository.port';
+import { DriverRepositoryPort } from '../../../domain/ports/driver.repository.port';
+import { ChatRepositoryPort } from '../../../domain/ports/platform.ports';
+import { ShipmentRepositoryPort } from '../../../domain/ports/shipment.repository.port';
+import { UserRepositoryPort } from '../../../domain/ports/user.repository.port';
 import { ForbiddenError, ValidationError } from '../../../shared/errors';
 import { envioExistente } from '../../services/access';
 import { NotificationService } from '../../services/notification.service';
@@ -40,6 +40,16 @@ function presentar(m: MensajeChat, yo: number) {
 }
 
 /** Conversación del envío entre el cliente y el conductor asignado (el administrador solo lee). */
+/** Quita caracteres de control (salvo tab y salto de línea) para que no rompan la interfaz. */
+export function sinControles(texto: string): string {
+  return [...texto]
+    .filter((c) => {
+      const codigo = c.codePointAt(0) ?? 0;
+      return codigo === 9 || codigo === 10 || (codigo >= 32 && codigo !== 127);
+    })
+    .join('');
+}
+
 export class ListChatUseCase {
   constructor(
     private readonly envios: ShipmentRepositoryPort,
@@ -75,8 +85,7 @@ export class SendChatMessageUseCase {
     if (!ESTADOS_CHAT_ABIERTO.includes(p.envio.estado ?? 'Pendiente')) {
       throw new ValidationError('El chat está disponible mientras el envío tiene conductor y no ha terminado');
     }
-    // Sin caracteres de control; espacios normalizados
-    const texto = typeof input.texto === 'string' ? input.texto.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').trim() : '';
+    const texto = typeof input.texto === 'string' ? sinControles(input.texto).trim() : '';
     if (texto.length < 1) throw new ValidationError('Escribe un mensaje');
     if (texto.length > LARGO_MAXIMO_MENSAJE) throw new ValidationError(`El mensaje admite máximo ${LARGO_MAXIMO_MENSAJE} caracteres`);
     const autor = await this.users.findById(actor.userId);
@@ -84,7 +93,10 @@ export class SendChatMessageUseCase {
     if (p.otro) {
       this.notificaciones.emitir(p.otro, 'chat', { id_envio: p.envio.id_envio, mensaje: presentar(m, p.otro) });
       const quien = p.rol === 'cliente' ? 'El cliente' : (autor?.nombre.split(' ')[0] ?? 'Tu conductor');
-      void this.notificaciones.push(p.otro, `${quien} · envío #${p.envio.id_envio}`, texto.slice(0, 140), `/envios/${p.envio.id_envio}?chat=1`, `chat-${p.envio.id_envio}`);
+      // El push no detiene el envío del mensaje
+      this.notificaciones
+        .push(p.otro, `${quien} · envío #${p.envio.id_envio}`, texto.slice(0, 140), `/envios/${p.envio.id_envio}?chat=1`, `chat-${p.envio.id_envio}`)
+        .catch(() => undefined);
     }
     return presentar(m, actor.userId);
   }

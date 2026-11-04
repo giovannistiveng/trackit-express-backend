@@ -1,4 +1,4 @@
-import { EventBusPort, EventoTiempoReal } from '../../domain/repositories/platform.ports';
+import { EventBusPort, EventoTiempoReal } from '../../domain/ports/platform.ports';
 
 /**
  * Bus de eventos en memoria. Cada pestaña abierta con /api/eventos se suscribe con el id del

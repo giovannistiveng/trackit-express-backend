@@ -74,9 +74,10 @@ describe('Logger', () => {
     fs.writeFileSync(path.join(dir, 'trackit-2026-10-25.txt'), 'reciente');
     fs.writeFileSync(path.join(dir, 'notas.txt'), 'no es un log');
 
-    new Logger({ dir, level: 'INFO', retentionDays: 30, toConsole: false, now: () => fecha });
+    const logger = new Logger({ dir, level: 'INFO', retentionDays: 30, toConsole: false, now: () => fecha });
+    expect(logger.directory).toBe(dir);
 
-    expect(fs.readdirSync(dir).sort()).toEqual(['notas.txt', 'trackit-2026-10-25.txt']);
+    expect(fs.readdirSync(dir).sort((a, b) => a.localeCompare(b))).toEqual(['notas.txt', 'trackit-2026-10-25.txt']);
   });
 
   it('debería escribir de forma síncrona con fatal()', () => {

@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { DocumentoConductor, TipoDocumento } from '../../../domain/entities/documento-conductor.entity';
-import { DocumentoConductorRepositoryPort } from '../../../domain/repositories/documento-conductor.repository.port';
+import { DocumentoConductorRepositoryPort } from '../../../domain/ports/documento-conductor.repository.port';
 
 interface DocumentoRow {
   id_documento: number;

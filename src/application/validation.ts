@@ -38,7 +38,12 @@ export function telefonoOpcional(valor: unknown): string | null {
 }
 
 export function esCorreo(valor: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(valor) && valor.length <= 180;
+  if (valor.length > 180 || /\s/.test(valor)) return false;
+  const arroba = valor.indexOf('@');
+  if (arroba < 1 || arroba !== valor.lastIndexOf('@')) return false;
+  const dominio = valor.slice(arroba + 1);
+  const punto = dominio.lastIndexOf('.');
+  return punto > 0 && dominio.length - punto - 1 >= 2;
 }
 
 export function esContrasenaSegura(valor: string): boolean {

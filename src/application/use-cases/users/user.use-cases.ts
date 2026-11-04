@@ -1,7 +1,7 @@
 import { Actor } from '../../../domain/entities/actor.entity';
 import { User } from '../../../domain/entities/user.entity';
-import { PasswordHasherPort } from '../../../domain/repositories/services.port';
-import { UserRepositoryPort } from '../../../domain/repositories/user.repository.port';
+import { PasswordHasherPort } from '../../../domain/ports/services.port';
+import { UserRepositoryPort } from '../../../domain/ports/user.repository.port';
 import { NotFoundError, ValidationError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 import { esContrasenaSegura, telefonoOpcional, textoValido } from '../../validation';

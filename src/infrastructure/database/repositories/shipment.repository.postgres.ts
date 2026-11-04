@@ -9,10 +9,10 @@ import {
   HistorialEstadoRow,
   ResumenConductor,
   ShipmentRepositoryPort,
-} from '../../../domain/repositories/shipment.repository.port';
+} from '../../../domain/ports/shipment.repository.port';
 import { ANTICIPO_PROGRAMADO_MIN, COMISION_PLATAFORMA } from '../../../domain/entities/shipment.entity';
 import { ValidationError } from '../../../shared/errors';
-import { esViolacionUnica } from '../pg-errors';
+import { NumeroPg, esViolacionUnica, patronBusqueda } from '../pg-utils';
 
 interface EnvioRow {
   id_envio: number;
@@ -26,11 +26,11 @@ interface EnvioRow {
   id_zona: number;
   categoria: VehicleCategory | null;
   fecha_creacion: Date;
-  origen_lat?: string | number | null;
-  origen_lon?: string | number | null;
-  destino_lat?: string | number | null;
-  destino_lon?: string | number | null;
-  distancia_km?: string | number | null;
+  origen_lat?: NumeroPg;
+  origen_lon?: NumeroPg;
+  destino_lat?: NumeroPg;
+  destino_lon?: NumeroPg;
+  distancia_km?: NumeroPg;
   duracion_min?: number | null;
   desglose?: DesgloseTarifa | null;
   notas?: string | null;
@@ -47,12 +47,12 @@ interface EnvioRow {
   fecha_recogida?: Date | null;
   estado: EstadoEnvio;
   fecha_ultimo_cambio?: Date | null;
-  calificacion?: string | number | null;
+  calificacion?: NumeroPg;
   comentario?: string | null;
   conductor_nombre?: string | null;
   conductor_placa?: string | null;
   conductor_vehiculo?: string | null;
-  conductor_promedio?: string | number | null;
+  conductor_promedio?: NumeroPg;
 }
 
 // La tabla Envio no tiene columna "estado": el estado actual es el último registro de Historial_Estado.
@@ -68,7 +68,7 @@ const SELECT_ENVIO = `
   SELECT e.*, COALESCE(ult.estado, 'Pendiente') AS estado, ult.fecha_cambio AS fecha_ultimo_cambio
   FROM Envio e ${ULTIMO_CAMBIO}`;
 
-function coords(lat: string | number | null | undefined, lon: string | number | null | undefined) {
+function coords(lat: NumeroPg | undefined, lon: NumeroPg | undefined) {
   return lat === null || lat === undefined || lon === null || lon === undefined ? null : { lat: Number(lat), lon: Number(lon) };
 }
 
@@ -379,7 +379,7 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
   }
 
   async searchAdmin(f: FiltroEnviosAdmin): Promise<{ items: EnvioAdmin[]; total: number }> {
-    const patron = f.texto ? `%${f.texto.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+    const patron = f.texto ? patronBusqueda(f.texto) : null;
     const idBuscado = f.texto && /^\d+$/.test(f.texto) ? Number(f.texto) : null;
     const result = await this.pool.query<EnvioRow & { cliente_nombre: string; cliente_correo: string; zona_nombre: string; total: string }>(
       `SELECT t.*, COUNT(*) OVER() AS total FROM (

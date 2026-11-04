@@ -1,5 +1,5 @@
 import { Actor } from '../../../domain/entities/actor.entity';
-import { PlataformaPush, PushRepositoryPort } from '../../../domain/repositories/platform.ports';
+import { PlataformaPush, PushRepositoryPort } from '../../../domain/ports/platform.ports';
 import { ValidationError } from '../../../shared/errors';
 
 const PLATAFORMAS: PlataformaPush[] = ['web', 'android', 'ios'];
@@ -34,7 +34,8 @@ export class UnsubscribePushUseCase {
   constructor(private readonly repo: PushRepositoryPort) {}
 
   async execute(actor: Actor, input: Record<string, unknown>): Promise<void> {
-    const endpoint = typeof input['endpoint'] === 'string' ? input['endpoint'] : typeof input['token'] === 'string' ? input['token'] : '';
+    const valor = [input['endpoint'], input['token']].find((v) => typeof v === 'string' && v !== '');
+    const endpoint = typeof valor === 'string' ? valor : '';
     if (!endpoint) throw new ValidationError('Indica la suscripción a eliminar');
     await this.repo.delete(endpoint, actor.userId);
   }

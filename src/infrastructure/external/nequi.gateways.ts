@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { EstadoGateway, PaymentGatewayPort } from '../../domain/repositories/platform.ports';
+import { EstadoGateway, PaymentGatewayPort } from '../../domain/ports/platform.ports';
 import { logger } from '../../shared/logger';
 
 const log = logger.child('Nequi');

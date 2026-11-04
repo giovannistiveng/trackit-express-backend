@@ -1,10 +1,10 @@
 import { Actor, ROLES } from '../../../domain/entities/actor.entity';
-import { AuditRepositoryPort } from '../../../domain/repositories/audit.repository.port';
-import { MetricsRepositoryPort } from '../../../domain/repositories/metrics.repository.port';
-import { ContactRepositoryPort } from '../../../domain/repositories/contact.repository.port';
-import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
-import { DatosZona, ZonaTarifaRepositoryPort } from '../../../domain/repositories/zona-tarifa.repository.port';
-import { TarifaVehiculoRepositoryPort } from '../../../domain/repositories/tarifa-vehiculo.repository.port';
+import { AuditRepositoryPort } from '../../../domain/ports/audit.repository.port';
+import { MetricsRepositoryPort } from '../../../domain/ports/metrics.repository.port';
+import { ContactRepositoryPort } from '../../../domain/ports/contact.repository.port';
+import { ShipmentRepositoryPort } from '../../../domain/ports/shipment.repository.port';
+import { DatosZona, ZonaTarifaRepositoryPort } from '../../../domain/ports/zona-tarifa.repository.port';
+import { TarifaVehiculoRepositoryPort } from '../../../domain/ports/tarifa-vehiculo.repository.port';
 import { categoriaOpcional } from '../../services/cotizador';
 import { presentarZona } from '../catalog/catalog.use-cases';
 import { ESTADOS_ENVIO, EstadoEnvio } from '../../../domain/entities/shipment.entity';

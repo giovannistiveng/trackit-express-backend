@@ -102,7 +102,7 @@ describe('CancelShipmentUseCase', () => {
     const pagos = pagosFalsos(s, d, servicio);
     const r = await new CancelShipmentUseCase(s, d, auditFalso().audit, servicio, pagos.servicio).execute(ADMIN, 1, 'Vía cerrada');
     expect(r.estado).toBe('Cancelado');
-    expect(repo.avisos.map((a) => a.id_usuario).sort()).toEqual([CLIENTE.userId, CONDUCTOR.userId].sort());
+    expect(repo.avisos.map((a) => a.id_usuario).sort((a, b) => a - b)).toEqual([CLIENTE.userId, CONDUCTOR.userId].sort((a, b) => a - b));
     await expect(new CancelShipmentUseCase(s, d, auditFalso().audit, servicio, pagos.servicio).execute(CONDUCTOR, 1)).rejects.toThrow();
   });
 });

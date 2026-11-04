@@ -1,5 +1,5 @@
 import { Actor } from '../../../domain/entities/actor.entity';
-import { NotificationRepositoryPort } from '../../../domain/repositories/notification.repository.port';
+import { NotificationRepositoryPort } from '../../../domain/ports/notification.repository.port';
 import { NotFoundError } from '../../../shared/errors';
 import { idValido } from '../../validation';
 

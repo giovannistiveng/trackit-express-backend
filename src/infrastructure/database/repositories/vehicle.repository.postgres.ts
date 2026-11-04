@@ -1,8 +1,8 @@
 import { Pool } from 'pg';
 import { Vehicle, VehicleCategory } from '../../../domain/entities/vehicle.entity';
-import { VehicleRepositoryPort } from '../../../domain/repositories/vehicle.repository.port';
+import { VehicleRepositoryPort } from '../../../domain/ports/vehicle.repository.port';
 import { ValidationError } from '../../../shared/errors';
-import { esViolacionUnica } from '../pg-errors';
+import { esViolacionUnica } from '../pg-utils';
 
 interface VehiculoRow {
   id_vehiculo: number;

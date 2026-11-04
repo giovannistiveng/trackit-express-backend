@@ -1,6 +1,6 @@
 import { Notificacion } from '../../domain/entities/notificacion.entity';
-import { NotificationRepositoryPort } from '../../domain/repositories/notification.repository.port';
-import { EventBusPort } from '../../domain/repositories/platform.ports';
+import { NotificationRepositoryPort } from '../../domain/ports/notification.repository.port';
+import { EventBusPort } from '../../domain/ports/platform.ports';
 import { PushService } from './push.service';
 
 export interface OpcionesNotificacion {
@@ -42,12 +42,12 @@ export class NotificationService {
       datos: { id, tipo: aviso.tipo, titulo: aviso.titulo, mensaje: aviso.mensaje, id_envio: aviso.id_envio ?? null, leida: false, fecha: new Date().toISOString() },
     });
     if (this.o.push) {
-      void this.o.push.enviar(n.id_usuario, {
+      this.o.push.enviar(n.id_usuario, {
         titulo: aviso.titulo,
         cuerpo: aviso.mensaje,
         url: rutaNotificacion(aviso),
         etiqueta: aviso.id_envio ? `envio-${aviso.id_envio}` : aviso.tipo,
-      });
+      }).catch(this.alFallar);
     }
   }
 

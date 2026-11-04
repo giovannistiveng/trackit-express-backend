@@ -1,9 +1,9 @@
 import { presentarZona } from '../catalog/catalog.use-cases';
 import { ASUNTOS_CONTACTO, AsuntoContacto } from '../../../domain/entities/contacto.entity';
 import { EstadisticasPublicas } from '../../../domain/entities/metricas.entity';
-import { ContactRepositoryPort } from '../../../domain/repositories/contact.repository.port';
-import { MetricsRepositoryPort } from '../../../domain/repositories/metrics.repository.port';
-import { ZonaTarifaRepositoryPort } from '../../../domain/repositories/zona-tarifa.repository.port';
+import { ContactRepositoryPort } from '../../../domain/ports/contact.repository.port';
+import { MetricsRepositoryPort } from '../../../domain/ports/metrics.repository.port';
+import { ZonaTarifaRepositoryPort } from '../../../domain/ports/zona-tarifa.repository.port';
 import { ValidationError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 import { esCorreo, telefonoOpcional, textoValido } from '../../validation';

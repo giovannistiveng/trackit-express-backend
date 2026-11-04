@@ -8,9 +8,9 @@ import {
 import { TarifaVehiculo } from '../../domain/entities/tarifa-vehiculo.entity';
 import { CATEGORIAS_VEHICULO, VehicleCategory } from '../../domain/entities/vehicle.entity';
 import { ZonaTarifa } from '../../domain/entities/zona-tarifa.entity';
-import { DistancePort, ResultadoDistancia } from '../../domain/repositories/services.port';
-import { TarifaVehiculoRepositoryPort } from '../../domain/repositories/tarifa-vehiculo.repository.port';
-import { ZonaTarifaRepositoryPort } from '../../domain/repositories/zona-tarifa.repository.port';
+import { DistancePort, ResultadoDistancia } from '../../domain/ports/services.port';
+import { TarifaVehiculoRepositoryPort } from '../../domain/ports/tarifa-vehiculo.repository.port';
+import { ZonaTarifaRepositoryPort } from '../../domain/ports/zona-tarifa.repository.port';
 import { coordenadasValidas } from '../../domain/services/geo';
 import {
   CATEGORIA_POR_DEFECTO,

@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { EstadisticasPublicas, MetricasAdmin } from '../../../domain/entities/metricas.entity';
-import { MetricsRepositoryPort } from '../../../domain/repositories/metrics.repository.port';
+import { MetricsRepositoryPort } from '../../../domain/ports/metrics.repository.port';
 
 const ESTADO_ACTUAL = `
   SELECT e.id_envio, e.tarifa, e.id_zona, COALESCE(ult.estado, 'Pendiente') AS estado

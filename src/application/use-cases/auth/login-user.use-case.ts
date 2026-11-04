@@ -1,5 +1,5 @@
-import { UserRepositoryPort } from '../../../domain/repositories/user.repository.port';
-import { PasswordHasherPort, TokenServicePort } from '../../../domain/repositories/services.port';
+import { UserRepositoryPort } from '../../../domain/ports/user.repository.port';
+import { PasswordHasherPort, TokenServicePort } from '../../../domain/ports/services.port';
 import { UnauthorizedError } from '../../../shared/errors';
 import { AuditService } from '../../services/audit.service';
 

@@ -1,7 +1,7 @@
 import { VehicleCategory } from '../../../domain/entities/vehicle.entity';
 import { Pool } from 'pg';
 import { Conductor, EstadoAprobacion } from '../../../domain/entities/driver.entity';
-import { ConductorPostulante, DriverRepositoryPort } from '../../../domain/repositories/driver.repository.port';
+import { ConductorPostulante, DriverRepositoryPort } from '../../../domain/ports/driver.repository.port';
 import { TipoDocumento } from '../../../domain/entities/documento-conductor.entity';
 
 interface ConductorRow {
@@ -74,7 +74,7 @@ export class DriverRepositoryPostgres implements DriverRepositoryPort {
       [id_conductor],
     );
     const p = r.rows[0]?.promedio;
-    return p === null || p === undefined ? null : Number(p);
+    return p == null ? null : Number(p);
   }
 
   async usuariosDisponibles(categorias: VehicleCategory[]): Promise<number[]> {

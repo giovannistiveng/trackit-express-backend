@@ -9,7 +9,7 @@ import { LocalDiskStorage } from '../../src/infrastructure/external/local-disk.s
 import { CloudinaryStorage, cloudinaryConfigurado } from '../../src/infrastructure/external/cloudinary.adapter';
 import { JWTService } from '../../src/infrastructure/security/jwt.service';
 import { HashService } from '../../src/infrastructure/security/hash.service';
-import { esViolacionUnica } from '../../src/infrastructure/database/pg-errors';
+import { esViolacionUnica } from '../../src/infrastructure/database/pg-utils';
 import { manejarErrores } from '../../src/infrastructure/http/middlewares/error.middleware';
 import { actorDe, autenticar, autorizar } from '../../src/infrastructure/http/middlewares/auth.middleware';
 import { Logger } from '../../src/shared/logger';

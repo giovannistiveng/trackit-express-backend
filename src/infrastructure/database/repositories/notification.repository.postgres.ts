@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { Notificacion, TipoNotificacion } from '../../../domain/entities/notificacion.entity';
-import { NotificationRepositoryPort } from '../../../domain/repositories/notification.repository.port';
+import { NotificationRepositoryPort } from '../../../domain/ports/notification.repository.port';
 
 interface NotificacionRow {
   id_notificacion: number;

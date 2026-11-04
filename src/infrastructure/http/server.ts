@@ -29,8 +29,10 @@ async function start(): Promise<void> {
   const server = app.listen(config.port, () => {
     log.info(`Servidor corriendo en http://localhost:${config.port} (entorno: ${config.nodeEnv})`);
     log.info(`Documentación de la API en http://localhost:${config.port}/api/docs`);
-    log.info(`Archivos: ${contenedor.storageLocal ? `disco local (${config.uploadsDir})` : 'Cloudinary'} · Logs en ${logger.directory}`);
-    log.info(`Pagos: ${contenedor.pasarela} · Correo: ${config.correo.host ? `SMTP ${config.correo.host}` : 'buzón local (logs/correos)'}`);
+    const archivos = contenedor.storageLocal ? `disco local (${config.uploadsDir})` : 'Cloudinary';
+    const correo = config.correo.host ? `SMTP ${config.correo.host}` : 'buzón local (logs/correos)';
+    log.info(`Archivos: ${archivos} · Logs en ${logger.directory}`);
+    log.info(`Pagos: ${contenedor.pasarela} · Correo: ${correo}`);
   });
   const detenerTareas = iniciarTareas(contenedor, log.child('Tareas'));
 

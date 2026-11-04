@@ -28,8 +28,18 @@ export function crearApp({ contenedor, log, salud }: OpcionesApp): Express {
 
   app.use(
     helmet({
-      // Swagger UI usa estilos y scripts en línea; las imágenes subidas se muestran desde otro origen
-      contentSecurityPolicy: false,
+      // La API solo responde JSON; la única página es Swagger UI, que usa estilos en línea
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+          connectSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+        },
+      },
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );

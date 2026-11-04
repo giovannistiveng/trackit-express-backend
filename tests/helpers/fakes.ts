@@ -2,16 +2,16 @@ import { Actor } from '../../src/domain/entities/actor.entity';
 import { Conductor } from '../../src/domain/entities/driver.entity';
 import { Envio, EnvioDetallado, EstadoEnvio } from '../../src/domain/entities/shipment.entity';
 import { Vehicle } from '../../src/domain/entities/vehicle.entity';
-import { DriverRepositoryPort, ConductorPostulante } from '../../src/domain/repositories/driver.repository.port';
-import { ShipmentRepositoryPort, HistorialEstadoRow, EnvioAdmin } from '../../src/domain/repositories/shipment.repository.port';
-import { NotificationRepositoryPort } from '../../src/domain/repositories/notification.repository.port';
+import { DriverRepositoryPort, ConductorPostulante } from '../../src/domain/ports/driver.repository.port';
+import { ShipmentRepositoryPort, HistorialEstadoRow, EnvioAdmin } from '../../src/domain/ports/shipment.repository.port';
+import { NotificationRepositoryPort } from '../../src/domain/ports/notification.repository.port';
 import { Notificacion } from '../../src/domain/entities/notificacion.entity';
 import { NotificationService } from '../../src/application/services/notification.service';
-import { VehicleRepositoryPort } from '../../src/domain/repositories/vehicle.repository.port';
-import { AuditRepositoryPort } from '../../src/domain/repositories/audit.repository.port';
+import { VehicleRepositoryPort } from '../../src/domain/ports/vehicle.repository.port';
+import { AuditRepositoryPort } from '../../src/domain/ports/audit.repository.port';
 import { AuditService } from '../../src/application/services/audit.service';
 import { PagosService, PublicadorEnvios } from '../../src/application/services/pagos.service';
-import { ChatRepositoryPort, PagoRepositoryPort, ParadaRepositoryPort, PaymentGatewayPort } from '../../src/domain/repositories/platform.ports';
+import { ChatRepositoryPort, PagoRepositoryPort, ParadaRepositoryPort, PaymentGatewayPort } from '../../src/domain/ports/platform.ports';
 import { Pago } from '../../src/domain/entities/pago.entity';
 import { MensajeChat } from '../../src/domain/entities/chat.entity';
 import { Parada } from '../../src/domain/entities/shipment.entity';
@@ -252,7 +252,12 @@ export class FakeChat implements ChatRepositoryPort {
   }
   async markRead(id: number, lector: number) {
     let n = 0;
-    for (const m of this.mensajes) if (m.id_envio === id && m.id_usuario !== lector && !m.leido) ((m.leido = true), n++);
+    for (const m of this.mensajes) {
+      if (m.id_envio === id && m.id_usuario !== lector && !m.leido) {
+        m.leido = true;
+        n++;
+      }
+    }
     return n;
   }
   async countUnread(id: number, lector: number) {
@@ -260,7 +265,7 @@ export class FakeChat implements ChatRepositoryPort {
   }
 }
 
-/** Pasarela que aprueba todo (o lo que diga `estado`). */
+/** Pasarela que aprueba cualquier cobro (o responde lo que diga `estado`). */
 export function pasarelaFalsa(estado: 'pendiente' | 'aprobado' | 'rechazado' | 'expirado' = 'aprobado'): PaymentGatewayPort & { estado: string; reembolsos: number } {
   return {
     nombre: 'falsa',

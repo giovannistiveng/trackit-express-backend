@@ -1,9 +1,9 @@
 import { Actor, ROLES } from '../../../domain/entities/actor.entity';
 import { ESTADOS_PAGO, EstadoPago, Liquidacion, Pago } from '../../../domain/entities/pago.entity';
 import { Envio } from '../../../domain/entities/shipment.entity';
-import { DriverRepositoryPort } from '../../../domain/repositories/driver.repository.port';
-import { LiquidacionRepositoryPort, PagoRepositoryPort } from '../../../domain/repositories/platform.ports';
-import { ShipmentRepositoryPort } from '../../../domain/repositories/shipment.repository.port';
+import { DriverRepositoryPort } from '../../../domain/ports/driver.repository.port';
+import { LiquidacionRepositoryPort, PagoRepositoryPort } from '../../../domain/ports/platform.ports';
+import { ShipmentRepositoryPort } from '../../../domain/ports/shipment.repository.port';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../../shared/errors';
 import { conductorDelActor, envioExistente, exigirEstado, exigirRol } from '../../services/access';
 import { AuditService } from '../../services/audit.service';
@@ -143,33 +143,37 @@ export class GenerateSettlementsUseCase {
 
   async execute(actor: Actor | null, input: { hasta?: unknown } = {}): Promise<Liquidacion[]> {
     if (actor) exigirRol(actor, ROLES.ADMIN);
-    const hoy = hoyColombia(this.reloj());
-    let hasta: Date;
-    if (input.hasta !== undefined && input.hasta !== null && input.hasta !== '') {
-      if (typeof input.hasta !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(input.hasta)) throw new ValidationError('La fecha de corte debe tener el formato AAAA-MM-DD');
-      hasta = new Date(`${input.hasta}T00:00:00Z`);
-      if (hasta.getTime() > hoy.getTime()) throw new ValidationError('La fecha de corte no puede ser futura');
-    } else {
-      hasta = new Date(lunesDe(hoy).getTime() - 86_400_000); // domingo anterior
-    }
+    const hasta = fechaDeCorte(input.hasta, hoyColombia(this.reloj()));
     const desde = new Date(hasta.getTime() - 6 * 86_400_000);
     const creadas = await this.liquidaciones.generar(iso(desde), iso(hasta));
     for (const l of creadas) {
       const c = await this.drivers.findById(l.id_conductor);
       if (!c) continue;
-      const texto =
-        l.saldo > 0
-          ? `Te pagaremos $ ${Math.round(l.saldo).toLocaleString('es-CO')} por tus ${l.servicios} servicios del ${l.desde} al ${l.hasta}.`
-          : l.saldo < 0
-            ? `Debes $ ${Math.round(-l.saldo).toLocaleString('es-CO')} de comisión por los cobros en efectivo del ${l.desde} al ${l.hasta}.`
-            : `Tus ${l.servicios} servicios del ${l.desde} al ${l.hasta} quedaron saldados.`;
-      await this.notificaciones.notificar({ id_usuario: c.id_usuario, tipo: 'liquidacion', titulo: 'Liquidación semanal', mensaje: texto });
+      await this.notificaciones.notificar({ id_usuario: c.id_usuario, tipo: 'liquidacion', titulo: 'Liquidación semanal', mensaje: textoLiquidacion(l) });
     }
     if (actor && creadas.length > 0) {
       await this.audit.registrar(actor, { accion: 'Liquidaciones generadas', entidad: 'Liquidación', detalle: `${creadas.length} del ${iso(desde)} al ${iso(hasta)}` });
     }
     return creadas;
   }
+}
+
+/** Fecha de corte (domingo de la semana a liquidar): la indicada o el domingo anterior a hoy. */
+function fechaDeCorte(valor: unknown, hoy: Date): Date {
+  if (valor === undefined || valor === null || valor === '') return new Date(lunesDe(hoy).getTime() - 86_400_000);
+  if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) throw new ValidationError('La fecha de corte debe tener el formato AAAA-MM-DD');
+  const hasta = new Date(`${valor}T00:00:00Z`);
+  if (hasta.getTime() > hoy.getTime()) throw new ValidationError('La fecha de corte no puede ser futura');
+  return hasta;
+}
+
+const pesos = (n: number) => `$ ${Math.round(n).toLocaleString('es-CO')}`;
+
+function textoLiquidacion(l: Liquidacion): string {
+  const periodo = `del ${l.desde} al ${l.hasta}`;
+  if (l.saldo > 0) return `Te pagaremos ${pesos(l.saldo)} por tus ${l.servicios} servicios ${periodo}.`;
+  if (l.saldo < 0) return `Debes ${pesos(-l.saldo)} de comisión por los cobros en efectivo ${periodo}.`;
+  return `Tus ${l.servicios} servicios ${periodo} quedaron saldados.`;
 }
 
 export class ListSettlementsUseCase {

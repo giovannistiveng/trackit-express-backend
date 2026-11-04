@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { ROLES } from '../../../domain/entities/actor.entity';
 import { User } from '../../../domain/entities/user.entity';
-import { UserRepositoryPort } from '../../../domain/repositories/user.repository.port';
+import { UserRepositoryPort } from '../../../domain/ports/user.repository.port';
 
 interface UsuarioRow {
   id_usuario: number;

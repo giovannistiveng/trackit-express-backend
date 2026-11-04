@@ -1,0 +1,100 @@
+# TrackIt Express completo: base de datos + API + aplicación web.
+#
+# Requisitos: las carpetas trackit-express-backend y trackit-express-frontend una al lado de la otra.
+# Uso (desde esta carpeta):
+#   cp .env.example .env      # y completa los valores (JWT_SECRET, contraseñas, APIs externas)
+#   docker compose up -d --build
+#   Abre http://localhost:8080   (Swagger: http://localhost:8080/api/docs)
+
+name: trackit
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-trackit_express}
+      POSTGRES_USER: ${DB_USER:-trackit}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en deploy/.env}
+      TZ: America/Bogota
+      PGTZ: America/Bogota
+    volumes:
+      - pg-datos:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [interna]
+
+  api:
+    build:
+      context: ..
+    image: trackit-api:${VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: America/Bogota
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-trackit_express}
+      DB_USER: ${DB_USER:-trackit}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DATABASE_URL: ""
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en deploy/.env (mínimo 32 caracteres)}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      # La web y la API comparten dominio (Nginx reenvía /api), así que la URL pública es la misma
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      FRONTEND_URL: ${PUBLIC_URL:-http://localhost:8080}
+      CORS_ORIGINS: ${PUBLIC_URL:-http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      NOMINATIM_CONTACT: ${NOMINATIM_CONTACT:-}
+      # Archivos (vacío = disco del contenedor, en el volumen api-datos)
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      # Correo (vacío = se guardan en /app/datos/logs/correos)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-TrackIt Express <no-responder@trackit.com.co>}
+      # Pagos
+      NEQUI_MODO: ${NEQUI_MODO:-simulado}
+      NEQUI_SIMULADO_SEGUNDOS: ${NEQUI_SIMULADO_SEGUNDOS:-8}
+      NEQUI_CLIENT_ID: ${NEQUI_CLIENT_ID:-}
+      NEQUI_CLIENT_SECRET: ${NEQUI_CLIENT_SECRET:-}
+      NEQUI_API_KEY: ${NEQUI_API_KEY:-}
+      NEQUI_CODIGO_COMERCIO: ${NEQUI_CODIGO_COMERCIO:-NIT_1}
+      # Notificaciones push
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:soporte@trackit.com.co}
+      FCM_SERVICE_ACCOUNT_FILE: ${FCM_SERVICE_ACCOUNT_FILE:-}
+    volumes:
+      - api-datos:/app/datos
+      # Archivos secretos (p. ej. la cuenta de servicio de Firebase): FCM_SERVICE_ACCOUNT_FILE=/run/secretos/firebase.json
+      - ./secretos:/run/secretos:ro
+    networks: [interna]
+
+  web:
+    build:
+      context: ../../trackit-express-frontend
+    image: trackit-web:${VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    networks: [interna]
+
+volumes:
+  pg-datos:
+  api-datos:
+
+networks:
+  interna:

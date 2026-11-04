@@ -1,4 +1,4 @@
-import { CorreoSaliente } from '../../domain/repositories/platform.ports';
+import { CorreoSaliente } from '../../domain/ports/platform.ports';
 
 const escapar = (t: string) => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
 

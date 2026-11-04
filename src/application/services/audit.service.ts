@@ -1,5 +1,5 @@
 import { Actor } from '../../domain/entities/actor.entity';
-import { AuditRepositoryPort } from '../../domain/repositories/audit.repository.port';
+import { AuditRepositoryPort } from '../../domain/ports/audit.repository.port';
 
 export interface EventoAuditoria {
   accion: string;

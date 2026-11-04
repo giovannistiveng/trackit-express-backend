@@ -7,8 +7,8 @@ import {
 } from '../../src/application/use-cases/admin/admin.use-cases';
 import { ListVehicleTariffsUseCase, ReverseGeocodeUseCase, SearchAddressUseCase } from '../../src/application/use-cases/catalog/catalog.use-cases';
 import { ZonaTarifa } from '../../src/domain/entities/zona-tarifa.entity';
-import { DistancePort } from '../../src/domain/repositories/services.port';
-import { ZonaTarifaRepositoryPort } from '../../src/domain/repositories/zona-tarifa.repository.port';
+import { DistancePort } from '../../src/domain/ports/services.port';
+import { ZonaTarifaRepositoryPort } from '../../src/domain/ports/zona-tarifa.repository.port';
 import {
   calcularTarifaDetallada,
   categoriasAtendibles,
