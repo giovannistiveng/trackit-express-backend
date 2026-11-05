@@ -38,6 +38,9 @@ function pad(n: number, len = 2): string {
   return String(n).padStart(len, '0');
 }
 
+/** Termina un archivo y espera a que lo escrito quede en disco. */
+const terminar = (s: fs.WriteStream) => new Promise<void>((resolve) => s.end(resolve));
+
 /** Fecha local AAAA-MM-DD (para el nombre del archivo). */
 export function formatDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -97,6 +100,8 @@ export class Logger {
   private mainStream: fs.WriteStream | null = null;
   private errorStream: fs.WriteStream | null = null;
   private fileWritingDisabled = false;
+  /** Archivos del día anterior que se están cerrando tras una rotación. */
+  private rotados: Promise<void>[] = [];
 
   constructor(options: LoggerOptions, private readonly context?: string, private readonly parent?: Logger) {
     this.opts = { now: () => new Date(), filePrefix: 'trackit', errorFilePrefix: 'errores', ...options };
@@ -151,7 +156,9 @@ export class Logger {
     root.mainStream = null;
     root.errorStream = null;
     root.currentDate = '';
-    return Promise.all(streams.map((s) => new Promise<void>((resolve) => s.end(resolve)))).then(() => undefined);
+    const pendientes = [...root.rotados, ...streams.map(terminar)];
+    root.rotados = [];
+    return Promise.all(pendientes).then(() => undefined);
   }
 
   get directory(): string {
@@ -216,8 +223,8 @@ export class Logger {
     const today = formatDate(this.opts.now());
     if (today === this.currentDate && this.mainStream) return;
 
-    this.mainStream?.end();
-    this.errorStream?.end();
+    // Se guarda la promesa de cierre: en Windows el archivo anterior puede tardar en vaciarse
+    for (const s of [this.mainStream, this.errorStream]) if (s) this.rotados.push(terminar(s));
     this.currentDate = today;
 
     const onError = (err: Error) => {
