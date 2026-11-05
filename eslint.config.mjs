@@ -15,6 +15,9 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-console': ['error', { allow: ['warn', 'error'] }],
+      // Igual que SonarQube S7773 y S6544
+      'no-restricted-globals': ['error', 'parseInt', 'parseFloat', 'isNaN', 'isFinite'],
+      '@typescript-eslint/no-misused-promises': 'error',
     },
   },
   {

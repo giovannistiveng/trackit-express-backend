@@ -3,14 +3,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-  port: parseInt(process.env.PORT || '3000', 10),
+  port: Number.parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   db: {
     /** Si existe (Render, Railway, Heroku), tiene prioridad sobre los campos sueltos. */
     url: process.env.DATABASE_URL || '',
     ssl: (process.env.DB_SSL || 'false').toLowerCase() === 'true',
     host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
+    port: Number.parseInt(process.env.DB_PORT || '5432', 10),
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
     database: process.env.DB_NAME || 'trackit_express',
@@ -20,7 +20,7 @@ export const config = {
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   },
   bcrypt: {
-    saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '10', 10),
+    saltRounds: Number.parseInt(process.env.BCRYPT_SALT_ROUNDS || '10', 10),
   },
   /** URL pública del backend (para construir enlaces a archivos guardados en disco). */
   publicUrl: (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || '3000'}`).replace(/\/$/, ''),
@@ -32,7 +32,7 @@ export const config = {
   correo: {
     /** Sin SMTP_HOST los correos se guardan como archivos en logs/correos (modo desarrollo). */
     host: process.env.SMTP_HOST || '',
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    port: Number.parseInt(process.env.SMTP_PORT || '587', 10),
     secure: (process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
@@ -59,7 +59,7 @@ export const config = {
     /** Código del comercio asignado por Nequi (NIT_1 en pruebas). */
     codigoComercio: process.env.NEQUI_CODIGO_COMERCIO || 'NIT_1',
     /** Modo simulado: segundos hasta que el cobro se aprueba solo. */
-    aprobacionSimuladaSeg: parseInt(process.env.NEQUI_SIMULADO_SEGUNDOS || '8', 10),
+    aprobacionSimuladaSeg: Number.parseInt(process.env.NEQUI_SIMULADO_SEGUNDOS || '8', 10),
   },
   /** Contacto que se envía a Nominatim (OpenStreetMap) en el User-Agent, como exige su política de uso. */
   nominatimContacto: process.env.NOMINATIM_CONTACT || 'soporte@trackit.com.co',
@@ -71,7 +71,7 @@ export const config = {
   log: {
     dir: process.env.LOG_DIR || 'logs',
     level: (process.env.LOG_LEVEL || '').toUpperCase(),
-    retentionDays: parseInt(process.env.LOG_RETENTION_DAYS || '30', 10),
+    retentionDays: Number.parseInt(process.env.LOG_RETENTION_DAYS || '30', 10),
     toConsole: (process.env.LOG_TO_CONSOLE || 'true').toLowerCase() !== 'false',
   },
 };

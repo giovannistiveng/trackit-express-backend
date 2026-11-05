@@ -10,7 +10,6 @@ let app: Express;
 beforeAll(async () => {
   disponible = await hayBaseDeDatos();
   if (!disponible) {
-    console.warn('⚠ Sin PostgreSQL de pruebas: se omiten las pruebas de integración (configura TEST_DB_NAME o TEST_DATABASE_URL)');
     return;
   }
   await reiniciarBase();

@@ -41,7 +41,9 @@ export function iniciarTareas(c: Contenedor, log: Logger, i: Intervalos = INTERV
     const creadas = await c.pagos.generarLiquidaciones.execute(null);
     if (creadas.length > 0) log.info(`${creadas.length} liquidación(es) semanal(es) generadas`);
   });
-  const timers = [setInterval(pagos, i.pagosMs), setInterval(programados, i.programadosMs), setInterval(liquidaciones, i.liquidacionesMs)];
+  // tarea() ya captura los errores, así que la promesa se descarta a propósito
+  const cada = (fn: () => Promise<void>, ms: number) => setInterval(() => void fn(), ms);
+  const timers = [cada(pagos, i.pagosMs), cada(programados, i.programadosMs), cada(liquidaciones, i.liquidacionesMs)];
   timers.forEach((t) => t.unref());
   void liquidaciones();
   return () => timers.forEach(clearInterval);

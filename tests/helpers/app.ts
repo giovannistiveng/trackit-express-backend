@@ -39,13 +39,45 @@ export const distanciaFija: DistancePort = {
 };
 
 /** ¿Hay una base de datos de pruebas disponible? */
+/**
+ * Comprueba la base de pruebas. Si PostgreSQL responde pero la base aún no existe (código 3D000),
+ * la crea; así `npm test` funciona en un equipo nuevo sin pasos manuales.
+ */
 export async function hayBaseDeDatos(): Promise<boolean> {
   try {
     await pool.query('SELECT 1');
     return true;
-  } catch {
+  } catch (e) {
+    if ((e as { code?: string }).code === '3D000' && !config.db.url && (await crearBasePruebas())) {
+      return hayBaseDeDatos();
+    }
+    avisarSinBase(e);
     return false;
   }
+}
+
+async function crearBasePruebas(): Promise<boolean> {
+  const nombre = config.db.database;
+  if (!/test/i.test(nombre) || !/^\w+$/.test(nombre)) return false;
+  const admin = new Pool({ ...config.db, database: 'postgres' });
+  try {
+    await admin.query(`CREATE DATABASE ${nombre}`);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await admin.end();
+  }
+}
+
+let avisado = false;
+function avisarSinBase(e: unknown): void {
+  if (avisado) return;
+  avisado = true;
+  console.warn(
+    `⚠ Sin PostgreSQL de pruebas (${(e as Error).message}): se omiten las pruebas de integración y la cobertura ` +
+      'baja. Revisa DB_HOST, DB_USER y DB_PASSWORD en .env o define TEST_DATABASE_URL.',
+  );
 }
 
 /** Borra y recrea el esquema de la base de pruebas. Se niega si el nombre no contiene "test". */

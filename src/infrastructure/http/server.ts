@@ -37,16 +37,18 @@ async function start(): Promise<void> {
   const detenerTareas = iniciarTareas(contenedor, log.child('Tareas'));
 
   // Apagado ordenado: deja de aceptar peticiones, cierra la base de datos y vacía los logs
+  const cerrarRecursos = async () => {
+    await pool.end().catch(() => undefined);
+    await Promise.all([logger.close(), frontendLogger.close()]);
+  };
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
       log.info(`Señal ${signal} recibida, apagando el servidor`);
       detenerTareas();
       // Las conexiones de eventos (SSE) quedan abiertas: se cierran para poder apagar
       setTimeout(() => server.closeAllConnections(), 2000).unref();
-      server.close(async () => {
-        await pool.end().catch(() => undefined);
-        await Promise.all([logger.close(), frontendLogger.close()]);
-        process.exit(0);
+      server.close(() => {
+        void cerrarRecursos().finally(() => process.exit(0));
       });
     });
   }
