@@ -1,0 +1,18 @@
+# Solo la base de datos, para desarrollo local (npm run dev usa .env con DB_HOST=localhost):
+#   docker compose up -d
+# Para la aplicación completa en contenedores usa deploy/docker-compose.yml.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: trackit_express
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: America/Bogota
+      PGTZ: America/Bogota
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-dev:/var/lib/postgresql/data
+volumes:
+  pg-dev:

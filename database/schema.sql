@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS Usuario (
     correo VARCHAR(180) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     id_rol INTEGER NOT NULL,
+    telefono VARCHAR(20),
+    fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    correo_verificado BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT fk_usuario_rol FOREIGN KEY (id_rol) REFERENCES Rol(id_rol)
 );
 
@@ -23,6 +26,7 @@ CREATE TABLE IF NOT EXISTS Usuario (
 CREATE TABLE IF NOT EXISTS Conductor (
     id_conductor SERIAL PRIMARY KEY,
     estado_aprobacion VARCHAR(30) NOT NULL DEFAULT 'Pendiente' CHECK (estado_aprobacion IN ('Pendiente', 'Aprobado', 'Rechazado')),
+    motivo_rechazo VARCHAR(255),
     id_usuario INTEGER NOT NULL UNIQUE,
     CONSTRAINT fk_conductor_usuario FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario)
 );
@@ -42,14 +46,33 @@ CREATE TABLE IF NOT EXISTS Documento_Conductor (
     tipo_documento VARCHAR(50) NOT NULL CHECK (tipo_documento IN ('Cédula', 'SOAT', 'Licencia')),
     url_archivo VARCHAR(500) NOT NULL,
     id_conductor INTEGER NOT NULL,
+    fecha_subida TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_documento_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor)
 );
+
 
 -- Tabla: Zona_Tarifa
 CREATE TABLE IF NOT EXISTS Zona_Tarifa (
     id_zona SERIAL PRIMARY KEY,
     nombre_zona VARCHAR(100) NOT NULL UNIQUE,
-    tarifa_base DECIMAL(12,2) NOT NULL DEFAULT 0
+    tarifa_base DECIMAL(12,2) NOT NULL DEFAULT 0, -- recargo de la zona (COP)
+    centro_lat DECIMAL(9,6),
+    centro_lon DECIMAL(9,6),
+    radio_km DECIMAL(6,2) NOT NULL DEFAULT 3,
+    activa BOOLEAN NOT NULL DEFAULT TRUE,
+    descripcion VARCHAR(200),
+    eliminada BOOLEAN NOT NULL DEFAULT FALSE,
+    CONSTRAINT chk_zona_radio CHECK (radio_km > 0 AND radio_km <= 60)
+);
+
+-- Tabla: Tarifa_Vehiculo (precio = banderazo + km × por_km + min × por_minuto, con mínimo)
+CREATE TABLE IF NOT EXISTS Tarifa_Vehiculo (
+    categoria VARCHAR(50) PRIMARY KEY CHECK (categoria IN ('Moto Express', 'Motocarro', 'Camioneta')),
+    banderazo DECIMAL(10,2) NOT NULL CHECK (banderazo >= 0),
+    por_km DECIMAL(10,2) NOT NULL CHECK (por_km >= 0),
+    por_minuto DECIMAL(10,2) NOT NULL CHECK (por_minuto >= 0),
+    minimo DECIMAL(10,2) NOT NULL CHECK (minimo >= 0),
+    actualizado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tabla: Envio
@@ -63,6 +86,28 @@ CREATE TABLE IF NOT EXISTS Envio (
     id_cliente INTEGER NOT NULL,
     id_conductor INTEGER,
     id_zona INTEGER NOT NULL,
+    categoria VARCHAR(50) CHECK (categoria IS NULL OR categoria IN ('Moto Express', 'Motocarro', 'Camioneta')),
+    fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    origen_lat DECIMAL(9,6),
+    origen_lon DECIMAL(9,6),
+    destino_lat DECIMAL(9,6),
+    destino_lon DECIMAL(9,6),
+    distancia_km DECIMAL(8,2),
+    duracion_min INTEGER,
+    desglose JSONB,
+    notas VARCHAR(300),
+    motivo_cancelacion VARCHAR(255),
+    metodo_pago VARCHAR(20) NOT NULL DEFAULT 'efectivo',
+    token_seguimiento VARCHAR(40),
+    destinatario_nombre VARCHAR(120),
+    destinatario_telefono VARCHAR(20),
+    fecha_programada TIMESTAMP,
+    aviso_programado BOOLEAN NOT NULL DEFAULT FALSE,
+    ida_y_vuelta BOOLEAN NOT NULL DEFAULT FALSE,
+    destino_visitado_en TIMESTAMP,
+    url_foto_recogida VARCHAR(500),
+    fecha_recogida TIMESTAMP,
+    CONSTRAINT chk_envio_metodo_pago CHECK (metodo_pago IN ('efectivo', 'nequi')),
     CONSTRAINT fk_envio_cliente FOREIGN KEY (id_cliente) REFERENCES Usuario(id_usuario),
     CONSTRAINT fk_envio_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor),
     CONSTRAINT fk_envio_zona FOREIGN KEY (id_zona) REFERENCES Zona_Tarifa(id_zona)
@@ -71,9 +116,10 @@ CREATE TABLE IF NOT EXISTS Envio (
 -- Tabla: Historial_Estado
 CREATE TABLE IF NOT EXISTS Historial_Estado (
     id_historial SERIAL PRIMARY KEY,
-    estado VARCHAR(40) NOT NULL CHECK (estado IN ('Pendiente', 'Asignado', 'En Ruta', 'Entregado')),
+    estado VARCHAR(40) NOT NULL,
     fecha_cambio TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     id_envio INTEGER NOT NULL,
+    CONSTRAINT chk_historial_estado CHECK (estado IN ('Pendiente', 'Asignado', 'En Ruta', 'Entregado', 'Cancelado')),
     CONSTRAINT fk_historial_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio)
 );
 
@@ -90,8 +136,147 @@ CREATE TABLE IF NOT EXISTS Evidencia_Entrega (
 CREATE TABLE IF NOT EXISTS Calificacion (
     id_calificacion SERIAL PRIMARY KEY,
     puntuacion DECIMAL(3,2) NOT NULL CHECK (puntuacion >= 1 AND puntuacion <= 5),
+    comentario VARCHAR(300),
     id_envio INTEGER NOT NULL UNIQUE,
     CONSTRAINT fk_calificacion_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio)
+);
+
+-- Tabla: Ubicacion_Envio (posición del conductor durante el servicio)
+CREATE TABLE IF NOT EXISTS Ubicacion_Envio (
+    id_ubicacion SERIAL PRIMARY KEY,
+    id_envio INTEGER NOT NULL,
+    latitud DECIMAL(9,6) NOT NULL CHECK (latitud BETWEEN -90 AND 90),
+    longitud DECIMAL(9,6) NOT NULL CHECK (longitud BETWEEN -180 AND 180),
+    capturado_en TIMESTAMP NOT NULL,
+    recibido_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ubicacion_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio),
+    CONSTRAINT uq_ubicacion_envio_captura UNIQUE (id_envio, capturado_en)
+);
+
+-- Tabla: Auditoria (acciones relevantes de los usuarios)
+CREATE TABLE IF NOT EXISTS Auditoria (
+    id_auditoria SERIAL PRIMARY KEY,
+    fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_usuario INTEGER,
+    correo_usuario VARCHAR(180),
+    accion VARCHAR(80) NOT NULL,
+    entidad VARCHAR(40) NOT NULL,
+    id_entidad INTEGER,
+    detalle VARCHAR(500),
+    CONSTRAINT fk_auditoria_usuario FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario)
+);
+
+-- Tabla: Notificacion (avisos dentro de la aplicación)
+CREATE TABLE IF NOT EXISTS Notificacion (
+    id_notificacion SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL,
+    tipo VARCHAR(40) NOT NULL,
+    titulo VARCHAR(120) NOT NULL,
+    mensaje VARCHAR(300) NOT NULL,
+    id_envio INTEGER,
+    leida BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_notificacion_usuario FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario),
+    CONSTRAINT fk_notificacion_envio FOREIGN KEY (id_envio) REFERENCES Envio(id_envio) ON DELETE SET NULL
+);
+
+-- Tabla: Contacto (formulario del sitio público)
+CREATE TABLE IF NOT EXISTS Contacto (
+    id_contacto SERIAL PRIMARY KEY,
+    nombre VARCHAR(120) NOT NULL,
+    correo VARCHAR(180) NOT NULL,
+    telefono VARCHAR(20),
+    asunto VARCHAR(40) NOT NULL DEFAULT 'General',
+    mensaje VARCHAR(1000) NOT NULL,
+    atendido BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla: Token_Usuario
+CREATE TABLE IF NOT EXISTS Token_Usuario (
+    id_token SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
+    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('verificacion', 'recuperacion')),
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    expira TIMESTAMP NOT NULL,
+    usado_en TIMESTAMP,
+    creado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla: Parada_Envio
+CREATE TABLE IF NOT EXISTS Parada_Envio (
+    id_parada SERIAL PRIMARY KEY,
+    id_envio INTEGER NOT NULL REFERENCES Envio(id_envio) ON DELETE CASCADE,
+    orden SMALLINT NOT NULL CHECK (orden BETWEEN 1 AND 10),
+    direccion VARCHAR(200) NOT NULL,
+    lat DECIMAL(9,6) NOT NULL,
+    lon DECIMAL(9,6) NOT NULL,
+    notas VARCHAR(200),
+    completada_en TIMESTAMP,
+    CONSTRAINT uq_parada_orden UNIQUE (id_envio, orden)
+);
+
+-- Tabla: Liquidacion
+CREATE TABLE IF NOT EXISTS Liquidacion (
+    id_liquidacion SERIAL PRIMARY KEY,
+    id_conductor INTEGER NOT NULL REFERENCES Conductor(id_conductor),
+    desde DATE NOT NULL,
+    hasta DATE NOT NULL,
+    servicios INTEGER NOT NULL DEFAULT 0,
+    total_tarifas DECIMAL(12,2) NOT NULL DEFAULT 0,
+    ganancia_conductor DECIMAL(12,2) NOT NULL DEFAULT 0,
+    cobrado_efectivo DECIMAL(12,2) NOT NULL DEFAULT 0,
+    comision_efectivo DECIMAL(12,2) NOT NULL DEFAULT 0,
+    -- Positivo: la plataforma le paga al conductor. Negativo: el conductor le debe a la plataforma.
+    saldo DECIMAL(12,2) NOT NULL DEFAULT 0,
+    estado VARCHAR(20) NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'pagada')),
+    referencia VARCHAR(100),
+    creada TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    pagada_en TIMESTAMP,
+    CONSTRAINT uq_liquidacion_periodo UNIQUE (id_conductor, desde, hasta)
+);
+
+-- Tabla: Pago
+CREATE TABLE IF NOT EXISTS Pago (
+    id_pago SERIAL PRIMARY KEY,
+    id_envio INTEGER NOT NULL UNIQUE REFERENCES Envio(id_envio),
+    metodo VARCHAR(20) NOT NULL CHECK (metodo IN ('efectivo', 'nequi')),
+    estado VARCHAR(30) NOT NULL CHECK (estado IN (
+        'pendiente', 'aprobado', 'rechazado', 'expirado',
+        'por_cobrar', 'cobrado', 'anulado', 'reembolso_pendiente', 'reembolsado')),
+    monto DECIMAL(12,2) NOT NULL CHECK (monto >= 0),
+    telefono VARCHAR(10),
+    transaccion_id VARCHAR(100),
+    mensaje VARCHAR(255),
+    intentos INTEGER NOT NULL DEFAULT 0,
+    creado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    aprobado_en TIMESTAMP,
+    id_liquidacion INTEGER REFERENCES Liquidacion(id_liquidacion),
+    -- Envíos anteriores al sistema de pagos: no entran en las liquidaciones
+    historico BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+-- Tabla: Mensaje_Chat
+CREATE TABLE IF NOT EXISTS Mensaje_Chat (
+    id_mensaje SERIAL PRIMARY KEY,
+    id_envio INTEGER NOT NULL REFERENCES Envio(id_envio) ON DELETE CASCADE,
+    id_usuario INTEGER NOT NULL REFERENCES Usuario(id_usuario),
+    texto VARCHAR(500) NOT NULL,
+    leido BOOLEAN NOT NULL DEFAULT FALSE,
+    creado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla: Suscripcion_Push
+CREATE TABLE IF NOT EXISTS Suscripcion_Push (
+    id_suscripcion SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
+    plataforma VARCHAR(10) NOT NULL CHECK (plataforma IN ('web', 'android', 'ios')),
+    -- Web: endpoint del navegador. Android/iOS: token de Firebase Cloud Messaging.
+    endpoint VARCHAR(700) NOT NULL UNIQUE,
+    p256dh VARCHAR(200),
+    auth VARCHAR(100),
+    creada TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Índices para optimizar consultas frecuentes
@@ -105,3 +290,16 @@ CREATE INDEX IF NOT EXISTS idx_envio_zona ON Envio(id_zona);
 CREATE INDEX IF NOT EXISTS idx_historial_envio ON Historial_Estado(id_envio);
 CREATE INDEX IF NOT EXISTS idx_evidencia_envio ON Evidencia_Entrega(id_envio);
 CREATE INDEX IF NOT EXISTS idx_calificacion_envio ON Calificacion(id_envio);
+CREATE INDEX IF NOT EXISTS idx_envio_fecha_creacion ON Envio(fecha_creacion);
+CREATE INDEX IF NOT EXISTS idx_ubicacion_envio ON Ubicacion_Envio(id_envio, capturado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_auditoria_fecha ON Auditoria(fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_auditoria_accion ON Auditoria(accion);
+CREATE INDEX IF NOT EXISTS idx_documento_conductor ON Documento_Conductor(id_conductor);
+CREATE INDEX IF NOT EXISTS idx_notificacion_usuario ON Notificacion(id_usuario, leida, fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_contacto_fecha ON Contacto(fecha DESC);
+CREATE INDEX IF NOT EXISTS idx_token_usuario ON Token_Usuario(id_usuario, tipo);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_envio_token_seguimiento ON Envio(token_seguimiento);
+CREATE INDEX IF NOT EXISTS idx_envio_programado ON Envio(fecha_programada) WHERE fecha_programada IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pago_estado ON Pago(metodo, estado);
+CREATE INDEX IF NOT EXISTS idx_chat_envio ON Mensaje_Chat(id_envio, creado);
+CREATE INDEX IF NOT EXISTS idx_push_usuario ON Suscripcion_Push(id_usuario);
