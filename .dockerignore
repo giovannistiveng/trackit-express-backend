@@ -1,0 +1,19 @@
+# Solo entra a la imagen lo que se compila; nunca secretos ni datos locales
+node_modules
+dist
+coverage
+reports
+logs
+uploads
+.env
+.env.*
+!.env.example
+.vapid.json
+*.log
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
+tests
+.scannerwork

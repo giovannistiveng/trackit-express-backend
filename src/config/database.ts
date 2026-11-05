@@ -1,21 +1,52 @@
 import { Pool } from 'pg';
 import { config } from './index';
+import { logger } from '../shared/logger';
+
+const log = logger.child('BaseDatos');
+
+/**
+ * Las columnas TIMESTAMP (sin zona) se guardan en la hora de la sesión de PostgreSQL y el driver
+ * las lee en la hora local de Node. Si las dos zonas difieren, las horas se corren (p. ej. un
+ * mensaje de las 7:55 p. m. aparece a las 12:55 a. m.). Se fija la sesión a la zona de Node.
+ */
+export const ZONA_HORARIA = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 export const pool = new Pool({
-  host: config.db.host,
-  port: config.db.port,
-  user: config.db.user,
-  password: config.db.password,
-  database: config.db.database,
+  ...(config.db.url
+    ? { connectionString: config.db.url }
+    : {
+        host: config.db.host,
+        port: config.db.port,
+        user: config.db.user,
+        password: config.db.password,
+        database: config.db.database,
+        options: `-c timezone=${ZONA_HORARIA}`,
+      }),
+  ...(config.db.ssl ? { ssl: { rejectUnauthorized: false } } : {}),
+  max: 10,
+  idleTimeoutMillis: 30_000,
+});
+
+// Con DATABASE_URL (Neon, Render…) puede haber un pooler que rechaza el parámetro de arranque
+// "options": ahí la zona se fija con SET al abrir cada conexión.
+if (config.db.url) {
+  pool.on('connect', (cliente) => {
+    cliente.query(`SET TIME ZONE '${ZONA_HORARIA.replace(/'/g, '')}'`).catch((e: unknown) => log.warn('No se pudo fijar la zona horaria de la sesión', e));
+  });
+}
+
+// Errores de clientes inactivos del pool (por ejemplo, si PostgreSQL se reinicia)
+pool.on('error', (err) => {
+  log.error('Error inesperado en el pool de PostgreSQL', err);
 });
 
 export async function testConnection(): Promise<void> {
   try {
     const client = await pool.connect();
-    console.log('✅ Conectado a PostgreSQL correctamente');
+    log.info(config.db.url ? 'Conectado a PostgreSQL (DATABASE_URL)' : `Conectado a PostgreSQL (${config.db.host}:${config.db.port}/${config.db.database})`);
     client.release();
   } catch (error) {
-    console.error('❌ Error conectando a PostgreSQL:', error);
+    log.error('Error conectando a PostgreSQL', error);
     throw error;
   }
 }

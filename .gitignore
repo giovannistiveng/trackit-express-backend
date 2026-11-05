@@ -35,3 +35,15 @@ coverage/
 
 # Angular
 .angular/
+
+# Archivos subidos (almacenamiento local)
+uploads/
+
+# SonarQube
+.scannerwork/
+.vapid.json
+reports/
+
+# Docker: valores reales del despliegue
+deploy/.env
+deploy/secretos/
