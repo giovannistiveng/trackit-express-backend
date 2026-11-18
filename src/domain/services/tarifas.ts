@@ -15,7 +15,7 @@ export const REDONDEO_COP = 100;
 export const RECARGO_PARADA = 1500;
 
 /** Capacidad relativa: un vehículo puede llevar pedidos de su categoría o de una menor. */
-export const CAPACIDAD: Record<VehicleCategory, number> = { 'Moto Express': 1, Motocarro: 2, Camioneta: 3, Camión: 4 };
+export const CAPACIDAD: Record<VehicleCategory, number> = { 'Moto Express': 1, Furgoneta: 2 };
 
 /** Categorías de pedido que puede atender un conductor con estos vehículos. */
 export function categoriasAtendibles(vehiculos: VehicleCategory[]): VehicleCategory[] {

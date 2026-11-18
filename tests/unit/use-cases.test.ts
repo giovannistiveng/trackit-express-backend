@@ -46,7 +46,8 @@ describe('validación', () => {
 describe('catálogo', () => {
   it('valida la categoría', () => {
     expect(categoriaOpcional('')).toBeNull();
-    expect(categoriaOpcional('Motocarro')).toBe('Motocarro');
+    expect(categoriaOpcional('Furgoneta')).toBe('Furgoneta');
+    expect(() => categoriaOpcional('Camioneta')).toThrow();
     expect(() => categoriaOpcional('Avión')).toThrow(ValidationError);
   });
   it('lista zonas', async () => {

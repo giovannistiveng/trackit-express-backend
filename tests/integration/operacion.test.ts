@@ -267,13 +267,13 @@ describe('Seguimiento, notificaciones, reputación y ganancias', () => {
 
     // Tarifas por vehículo
     expect((await request(app).put('/api/admin/tarifas/Avi%C3%B3n').set(auth(admin.token)).send({})).status).toBe(400);
-    expect((await request(app).put('/api/admin/tarifas/Motocarro').set(auth(admin.token)).send({ banderazo: -1, por_km: 1, por_minuto: 1, minimo: 1 })).status).toBe(400);
+    expect((await request(app).put('/api/admin/tarifas/Furgoneta').set(auth(admin.token)).send({ banderazo: -1, por_km: 1, por_minuto: 1, minimo: 1 })).status).toBe(400);
     const t = await request(app).put('/api/admin/tarifas/Moto%20Express').set(auth(admin.token)).send({ banderazo: 3000, por_km: 800, por_minuto: 0, minimo: 6000 });
     expect(t.body.tarifa).toEqual({ categoria: 'Moto Express', banderazo: 3000, por_km: 800, por_minuto: 0, minimo: 6000 });
     // 3.000 + 34,5 × 800 = 30.600 + recargo 6.000 = 36.600
     const cot3 = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Casco Urbano', destino: 'Silvania', categoria: 'Moto Express' });
     expect(cot3.body.tarifa_total).toBe(36600);
-    expect((await request(app).put('/api/admin/tarifas/Motocarro').set(auth(cliente.token)).send({})).status).toBe(403);
+    expect((await request(app).put('/api/admin/tarifas/Furgoneta').set(auth(cliente.token)).send({})).status).toBe(403);
 
     // Las cifras públicas reflejan la operación
     const met = await request(app).get('/api/admin/dashboard/metrics').set(auth(admin.token));

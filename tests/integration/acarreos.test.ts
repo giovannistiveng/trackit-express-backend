@@ -28,11 +28,11 @@ const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const RUTA = { origen: 'Parque principal', destino: 'Silvania', origen_coords: FUSA, destino_coords: SILVANIA };
 const TRASTEO = { objetos: 'Nevera, cama doble y 10 cajas', pisos_origen: 3, ayudantes: 1, bultos: 12 };
 
-async function conductorConCamioneta(correo: string, placa: string) {
+async function conductorConFurgoneta(correo: string, placa: string) {
   const s = await sesion(app, correo, 3, 'Camilo Rojas');
   const admin = await sesionAdmin(app);
   const me = (await request(app).get('/api/conductores/me').set(auth(s.token))).body;
-  await request(app).post('/api/vehicles/register').set(auth(s.token)).send({ placa, categoria: 'Camioneta' });
+  await request(app).post('/api/vehicles/register').set(auth(s.token)).send({ placa, categoria: 'Furgoneta' });
   await aprobarConductor(app, s.token, admin.token, me.id_conductor);
   return s;
 }
@@ -44,24 +44,24 @@ describe('Acarreos: tipos de servicio y entrega sin confusiones', () => {
     const cliente = await sesion(app, 'tras.cli@t.co', 2);
     const cot = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ ...RUTA, tipo_servicio: 'trasteo', detalle_servicio: TRASTEO });
     expect(cot.status).toBe(200);
-    expect(cot.body).toMatchObject({ tipo_servicio: 'trasteo', vehiculo_minimo: 'Motocarro', categoria: 'Motocarro' });
-    expect(cot.body.opciones.map((o: { categoria: string }) => o.categoria)).toEqual(['Motocarro', 'Camioneta', 'Camión']);
+    expect(cot.body).toMatchObject({ tipo_servicio: 'trasteo', vehiculo_minimo: 'Furgoneta', categoria: 'Furgoneta' });
+    expect(cot.body.opciones.map((o: { categoria: string }) => o.categoria)).toEqual(['Furgoneta']);
     expect(cot.body.desglose.extras).toEqual([
       { concepto: '1 ayudante', valor: 25000 },
       { concepto: 'Escaleras (2 pisos)', valor: 8000 },
     ]);
     const moto = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ ...RUTA, categoria: 'Moto Express', tipo_servicio: 'trasteo', detalle_servicio: TRASTEO });
-    expect(moto.body.error).toBe('Este pedido de trasteo necesita mínimo Motocarro');
+    expect(moto.body.error).toBe('Este pedido de trasteo necesita mínimo Furgoneta');
     const pesado = await request(app)
       .post('/api/cotizar/cotizar')
       .set(auth(cliente.token))
-      .send({ ...RUTA, categoria: 'Motocarro', tipo_servicio: 'insumos', detalle_servicio: { insumo: 'Abono', peso_kg: 600, acceso_destapado: true } });
-    expect(pesado.body.error).toBe('Este pedido de insumos del campo de 600 kg necesita mínimo Camioneta');
+      .send({ ...RUTA, categoria: 'Moto Express', tipo_servicio: 'insumos', detalle_servicio: { insumo: 'Abono', peso_kg: 600, acceso_destapado: true } });
+    expect(pesado.body.error).toBe('Este pedido de insumos del campo de 600 kg necesita mínimo Furgoneta');
     const insumos = await request(app)
       .post('/api/cotizar/cotizar')
       .set(auth(cliente.token))
       .send({ ...RUTA, tipo_servicio: 'insumos', detalle_servicio: { insumo: 'Abono', peso_kg: 600, acceso_destapado: true } });
-    expect(insumos.body).toMatchObject({ categoria: 'Camioneta', desglose: { recargo_acceso: expect.any(Number) } });
+    expect(insumos.body).toMatchObject({ categoria: 'Furgoneta', desglose: { recargo_acceso: expect.any(Number) } });
     expect(insumos.body.desglose.recargo_acceso).toBeGreaterThan(0);
     expect((await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ ...RUTA, tipo_servicio: 'mercado' })).body.error).toBe(
       'Completa el campo "lista del mercado"',
@@ -70,7 +70,7 @@ describe('Acarreos: tipos de servicio y entrega sin confusiones', () => {
 
   conBd('trasteo: llegada a recoger, código, bultos contados y llegada al destino avisan al cliente', async () => {
     const cliente = await sesion(app, 'paso.cli@t.co', 2);
-    const conductor = await conductorConCamioneta('paso.con@t.co', 'TRA123');
+    const conductor = await conductorConFurgoneta('paso.con@t.co', 'TRA123');
     const crear = await request(app)
       .post('/api/envios/crear')
       .set(auth(cliente.token))
@@ -130,7 +130,7 @@ describe('Acarreos: tipos de servicio y entrega sin confusiones', () => {
 
   conBd('mercado: sin código de recogida, el conductor registra la compra y la cobra al entregar', async () => {
     const cliente = await sesion(app, 'merc.cli@t.co', 2);
-    const conductor = await conductorConCamioneta('merc.con@t.co', 'MER456');
+    const conductor = await conductorConFurgoneta('merc.con@t.co', 'MER456');
     const envio = (
       await request(app)
         .post('/api/envios/crear')

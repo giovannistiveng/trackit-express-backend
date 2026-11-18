@@ -36,9 +36,7 @@ import { coordenadasOpcionales, idValido, textoOpcional, textoValido } from '../
 /** Tarifas de respaldo si la tabla Tarifa_Vehiculo aún no existe o está vacía (migración 003 pendiente). */
 export const TARIFAS_POR_DEFECTO: TarifaVehiculo[] = [
   { categoria: 'Moto Express', banderazo: 2000, por_km: 700, por_minuto: 50, minimo: 4500 },
-  { categoria: 'Motocarro', banderazo: 4000, por_km: 950, por_minuto: 80, minimo: 8000 },
-  { categoria: 'Camioneta', banderazo: 10000, por_km: 1600, por_minuto: 120, minimo: 18000 },
-  { categoria: 'Camión', banderazo: 25000, por_km: 2800, por_minuto: 250, minimo: 45000 },
+  { categoria: 'Furgoneta', banderazo: 12000, por_km: 1800, por_minuto: 150, minimo: 22000 },
 ];
 
 export interface SolicitudRuta {
