@@ -23,18 +23,19 @@ export const SERVICIOS: Record<TipoServicio, InfoServicio> = {
   mandado: { nombre: 'Mandado', tipoCarga: 'Mandado', vehiculoMinimo: 'Moto Express', pideCodigoRecogida: false, conCompra: true },
   mercado: { nombre: 'Mercado', tipoCarga: 'Mercado', vehiculoMinimo: 'Moto Express', pideCodigoRecogida: false, conCompra: true },
   paquete: { nombre: 'Paquete', tipoCarga: 'Mercancía General', vehiculoMinimo: 'Moto Express', pideCodigoRecogida: true, conCompra: false },
-  trasteo: { nombre: 'Trasteo', tipoCarga: 'Acarreo', vehiculoMinimo: 'Motocarro', pideCodigoRecogida: true, conCompra: false },
+  trasteo: { nombre: 'Trasteo', tipoCarga: 'Acarreo', vehiculoMinimo: 'Furgoneta', pideCodigoRecogida: true, conCompra: false },
   insumos: { nombre: 'Insumos del campo', tipoCarga: 'Carga Pesada', vehiculoMinimo: 'Moto Express', pideCodigoRecogida: true, conCompra: false },
 };
 
-/** Peso máximo que lleva cada vehículo (kg). */
+/**
+ * Peso máximo que lleva cada vehículo (kg). La moto hace mandados, mercados y paquetes livianos;
+ * la furgoneta, los trasteos y la carga pesada.
+ */
 export const CAPACIDAD_KG: Record<VehicleCategory, number> = {
   'Moto Express': 20,
-  Motocarro: 300,
-  Camioneta: 1000,
-  Camión: 3500,
+  Furgoneta: 1500,
 };
-export const PESO_MAXIMO_KG = CAPACIDAD_KG['Camión'];
+export const PESO_MAXIMO_KG = CAPACIDAD_KG['Furgoneta'];
 
 /** Valor de cada ayudante en un trasteo (carga y descarga). */
 export const VALOR_AYUDANTE = 25000;
@@ -139,7 +140,7 @@ const ORDEN = (c: VehicleCategory) => CATEGORIAS_VEHICULO.indexOf(c);
 export function vehiculoMinimo(tipo: TipoServicio, detalle: DetalleServicio): VehicleCategory {
   let minimo = SERVICIOS[tipo].vehiculoMinimo;
   if (detalle.peso_kg !== undefined) {
-    const porPeso = CATEGORIAS_VEHICULO.find((c) => CAPACIDAD_KG[c] >= (detalle.peso_kg as number)) ?? 'Camión';
+    const porPeso = CATEGORIAS_VEHICULO.find((c) => CAPACIDAD_KG[c] >= (detalle.peso_kg as number)) ?? 'Furgoneta';
     if (ORDEN(porPeso) > ORDEN(minimo)) minimo = porPeso;
   }
   return minimo;

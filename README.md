@@ -171,9 +171,7 @@ Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Req
   | Vehículo     | Banderazo | Por km | Por minuto | Mínimo |
   | ------------ | --------- | ------ | ---------- | ------ |
   | Moto Express | 2.000     | 700    | 50         | 4.500  |
-  | Motocarro    | 4.000     | 950    | 80         | 8.000  |
-  | Camioneta    | 10.000    | 1.600  | 120        | 18.000 |
-  | Camión       | 25.000    | 2.800  | 250        | 45.000 |
+  | Furgoneta    | 12.000    | 1.800  | 150        | 22.000 |
 
   Ejemplos en moto: dentro del centro ≈ $4.500; Fusagasugá → Silvania (≈14 km) ≈ $15.000.
   El conductor gana el 80 %; la plataforma, el 20 %.
@@ -182,7 +180,7 @@ Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Req
   todas, no hay servicio. Distancia y tiempo por carretera con OSRM; direcciones con Nominatim, limitadas a 80 km de
   Fusagasugá (antes "Vereda Pekín" podía caer en otro país y dar miles de km).
 - **Un servicio activo por conductor.** Un vehículo más grande atiende pedidos de su tamaño o menores
-  (Camioneta ⊃ Motocarro ⊃ Moto Express). Al crear un envío se avisa a los conductores disponibles que pueden llevarlo.
+  (la furgoneta también puede tomar pedidos de moto). Al crear un envío se avisa a los conductores disponibles que pueden llevarlo.
 - **PIN:** solo lo ve el cliente dueño; sin el PIN correcto y la foto no se valida la entrega.
 - **Seguimiento:** la señal está "en vivo" si la última posición tiene menos de 2 minutos. El ETA usa 30 km/h y un factor de 1,3 por las curvas de la vía.
 - **Pagos:**
@@ -199,7 +197,8 @@ Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Req
 - **Paradas e ida y vuelta:** hasta 3 paradas ubicadas en el mapa ($1.500 c/u); la distancia suma cada tramo. En ida
   y vuelta el conductor marca la llegada al destino y la entrega (PIN) se valida al regresar al origen.
 - **Servicios:** mandado, mercado, paquete, trasteo e insumos del campo, cada uno con su detalle (`detalle_servicio`).
-  El vehículo mínimo sale del servicio y del peso (moto 20 kg, motocarro 300, camioneta 1.000, camión 3.500).
+  Solo hay dos vehículos: **Moto Express** (mandados, mercados y paquetes hasta 20 kg) y **Furgoneta** (trasteos y
+  carga pesada hasta 1.500 kg). El vehículo mínimo sale del servicio y del peso.
   Trasteo: $25.000 por ayudante (máx. 3) y $4.000 por piso sin ascensor. Vía destapada: +15 %.
 - **Etapas del servicio:** buscando conductor → va a recoger → en el punto de recogida → en camino (→ regresando en
   ida y vuelta) → en el destino → entregado. El conductor tiene un solo botón por etapa y el cliente ve la misma etapa.

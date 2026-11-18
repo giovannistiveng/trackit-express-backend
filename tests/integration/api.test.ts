@@ -126,9 +126,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     });
     expect(cot.body.opciones).toEqual([
       { categoria: 'Moto Express', tarifa_total: 31600, minimo_aplicado: false },
-      { categoria: 'Motocarro', tarifa_total: 44300, minimo_aplicado: false },
-      { categoria: 'Camioneta', tarifa_total: 75500, minimo_aplicado: false },
-      { categoria: 'Camión', tarifa_total: 140900, minimo_aplicado: false },
+      { categoria: 'Furgoneta', tarifa_total: 86500, minimo_aplicado: false },
     ]);
     expect((await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Pasca', destino: 'pasca', id_zona: 1 })).status).toBe(400);
     const fuera = await request(app)
@@ -171,10 +169,10 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     const veh = await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: ' abc-12d ', categoria: 'Moto Express' });
     expect(veh.status).toBe(201);
     expect(veh.body.vehicle).toMatchObject({ placa: 'ABC12D', categoria: 'Moto Express' });
-    expect((await request(app).post('/api/vehicles/register').set(auth(otroConductor.token)).send({ placa: 'ABC12D', categoria: 'Camioneta' })).body.error).toBe(
+    expect((await request(app).post('/api/vehicles/register').set(auth(otroConductor.token)).send({ placa: 'ABC12D', categoria: 'Furgoneta' })).body.error).toBe(
       'La placa ya está registrada',
     );
-    expect((await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: 'AB1234', categoria: 'Camioneta' })).status).toBe(400);
+    expect((await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: 'AB1234', categoria: 'Furgoneta' })).status).toBe(400);
     const doc = await request(app).post('/api/documentos/upload').set(auth(conductor.token)).field('tipo_documento', 'Cédula').attach('archivo', JPG, { filename: 'c.jpg', contentType: 'image/jpeg' });
     expect(doc.status).toBe(201);
     expect(doc.body.documento.url_archivo).toMatch(/^http:\/\/localhost:3000\/uploads\/trackit\/documentos\/\d+\/.+\.jpg$/);
@@ -320,12 +318,12 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     const me = (await request(app).get('/api/conductores/me').set(auth(conductor.token))).body;
     const meCam = (await request(app).get('/api/conductores/me').set(auth(camionero.token))).body;
     await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: 'XYZ123', categoria: 'Moto Express' });
-    await request(app).post('/api/vehicles/register').set(auth(camionero.token)).send({ placa: 'CAM456', categoria: 'Camioneta' });
+    await request(app).post('/api/vehicles/register').set(auth(camionero.token)).send({ placa: 'CAM456', categoria: 'Furgoneta' });
     await aprobarConductor(app, conductor.token, admin.token, me.id_conductor);
     await aprobarConductor(app, camionero.token, admin.token, meCam.id_conductor);
     const crear = (categoria?: string) =>
       request(app).post('/api/envios/crear').set(auth(cliente.token)).send({ origen: 'Casco', destino: 'Pasca', tipo_carga: 'Documentos', ...(categoria ? { categoria } : {}) });
-    const grande = (await crear('Camioneta')).body.envio;
+    const grande = (await crear('Furgoneta')).body.envio;
     const moto = (await crear('Moto Express')).body.envio;
     const libre = (await crear()).body.envio;
     const ver = async (token: string) =>
@@ -334,7 +332,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     expect(ids).toEqual(expect.arrayContaining([libre.id_envio, moto.id_envio]));
     expect(ids).not.toContain(grande.id_envio);
     expect(await ver(camionero.token)).toEqual(expect.arrayContaining([libre.id_envio, moto.id_envio, grande.id_envio]));
-    expect((await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: grande.id_envio })).body.error).toBe('Este envío requiere un vehículo Camioneta');
+    expect((await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: grande.id_envio })).body.error).toBe('Este envío requiere un vehículo Furgoneta');
     // Los conductores aprobados reciben el aviso de servicio nuevo
     const avisos = (await request(app).get('/api/notificaciones').set(auth(camionero.token))).body.items;
     expect(avisos.some((n: { tipo: string; id_envio: number }) => n.tipo === 'nuevo_servicio' && n.id_envio === grande.id_envio)).toBe(true);

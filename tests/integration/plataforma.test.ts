@@ -44,7 +44,7 @@ async function conductorListo(correo: string, placa: string) {
   const s = await sesion(app, correo, 3, 'Camilo Rojas');
   const admin = await sesionAdmin(app);
   const me = (await request(app).get('/api/conductores/me').set(auth(s.token))).body;
-  await request(app).post('/api/vehicles/register').set(auth(s.token)).send({ placa, categoria: 'Camioneta' });
+  await request(app).post('/api/vehicles/register').set(auth(s.token)).send({ placa, categoria: 'Furgoneta' });
   await aprobarConductor(app, s.token, admin.token, me.id_conductor);
   return s;
 }
@@ -303,7 +303,7 @@ describe('Seguimiento público, edición y envíos avanzados', () => {
     await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: envio.id_envio });
     expect((await request(app).patch(`/api/envios/${envio.id_envio}`).set(auth(cliente.token)).send({ notas: 'y' })).status).toBe(400);
     const pub2 = (await request(app).get(`/api/publico/seguimiento/${envio.token_seguimiento}`)).body;
-    expect(pub2.conductor).toEqual({ nombre: 'Camilo', vehiculo: 'Camioneta', placa: 'LNK12A' });
+    expect(pub2.conductor).toEqual({ nombre: 'Camilo', vehiculo: 'Furgoneta', placa: 'LNK12A' });
     expect(pub2.historial.map((h: { estado: string }) => h.estado)).toEqual(['Asignado', 'Pendiente']);
     // El conductor asignado ve a quién entregar
     expect((await request(app).get(`/api/envios/${envio.id_envio}`).set(auth(conductor.token))).body.envio.destinatario_telefono).toBe('3001112233');

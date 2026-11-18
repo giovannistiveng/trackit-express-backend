@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS Conductor (
 CREATE TABLE IF NOT EXISTS Vehiculo (
     id_vehiculo SERIAL PRIMARY KEY,
     placa VARCHAR(20) NOT NULL UNIQUE,
-    categoria VARCHAR(50) NOT NULL CONSTRAINT chk_vehiculo_categoria CHECK (categoria IN ('Moto Express', 'Motocarro', 'Camioneta', 'Camión')),
+    categoria VARCHAR(50) NOT NULL CONSTRAINT chk_vehiculo_categoria CHECK (categoria IN ('Moto Express', 'Furgoneta')),
     id_conductor INTEGER NOT NULL,
     CONSTRAINT fk_vehiculo_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor)
 );
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS Zona_Tarifa (
 
 -- Tabla: Tarifa_Vehiculo (precio = banderazo + km × por_km + min × por_minuto, con mínimo)
 CREATE TABLE IF NOT EXISTS Tarifa_Vehiculo (
-    categoria VARCHAR(50) PRIMARY KEY CONSTRAINT chk_tarifa_categoria CHECK (categoria IN ('Moto Express', 'Motocarro', 'Camioneta', 'Camión')),
+    categoria VARCHAR(50) PRIMARY KEY CONSTRAINT chk_tarifa_categoria CHECK (categoria IN ('Moto Express', 'Furgoneta')),
     banderazo DECIMAL(10,2) NOT NULL CHECK (banderazo >= 0),
     por_km DECIMAL(10,2) NOT NULL CHECK (por_km >= 0),
     por_minuto DECIMAL(10,2) NOT NULL CHECK (por_minuto >= 0),
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS Envio (
     id_cliente INTEGER NOT NULL,
     id_conductor INTEGER,
     id_zona INTEGER NOT NULL,
-    categoria VARCHAR(50) CONSTRAINT chk_envio_categoria CHECK (categoria IS NULL OR categoria IN ('Moto Express', 'Motocarro', 'Camioneta', 'Camión')),
+    categoria VARCHAR(50) CONSTRAINT chk_envio_categoria CHECK (categoria IS NULL OR categoria IN ('Moto Express', 'Furgoneta')),
     fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     origen_lat DECIMAL(9,6),
     origen_lon DECIMAL(9,6),

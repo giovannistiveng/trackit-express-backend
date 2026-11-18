@@ -64,7 +64,7 @@ describe('tipos de servicio', () => {
     expect(detalleValido('mercado', { lista: 'Arroz, huevos', presupuesto: 80000 })).toEqual({ lista: 'Arroz, huevos', presupuesto: 80000 });
     expect(() => detalleValido('insumos', { insumo: 'Abono' })).toThrow('Indica el peso aproximado');
     expect(detalleValido('insumos', { insumo: 'Abono', peso_kg: 250, acceso_destapado: 'true' })).toEqual({ insumo: 'Abono', peso_kg: 250, acceso_destapado: true });
-    expect(() => detalleValido('insumos', { insumo: 'Arena', peso_kg: 9000 })).toThrow('entre 1 y 3500');
+    expect(() => detalleValido('insumos', { insumo: 'Arena', peso_kg: 9000 })).toThrow('entre 1 y 1500');
   });
 
   it('valida el contacto en el origen y el largo de los textos', () => {
@@ -80,12 +80,12 @@ describe('tipos de servicio', () => {
 
   it('el vehículo mínimo depende del servicio y del peso', () => {
     expect(vehiculoMinimo('mandado', {})).toBe('Moto Express');
-    expect(vehiculoMinimo('trasteo', { objetos: 'x' })).toBe('Motocarro');
+    expect(vehiculoMinimo('trasteo', { objetos: 'x' })).toBe('Furgoneta');
     expect(vehiculoMinimo('insumos', { peso_kg: 20 })).toBe('Moto Express');
-    expect(vehiculoMinimo('insumos', { peso_kg: 21 })).toBe('Motocarro');
-    expect(vehiculoMinimo('insumos', { peso_kg: 800 })).toBe('Camioneta');
-    expect(vehiculoMinimo('trasteo', { peso_kg: 2000 })).toBe('Camión');
-    expect(vehiculosParaServicio('trasteo', {})).toEqual(['Motocarro', 'Camioneta', 'Camión']);
+    expect(vehiculoMinimo('insumos', { peso_kg: 21 })).toBe('Furgoneta');
+    expect(vehiculoMinimo('insumos', { peso_kg: 2000 })).toBe('Furgoneta');
+    expect(vehiculosParaServicio('trasteo', {})).toEqual(['Furgoneta']);
+    expect(vehiculosParaServicio('paquete', {})).toEqual(['Moto Express', 'Furgoneta']);
   });
 
   it('suma ayudantes y escaleras sin ascensor; el acceso destapado es un porcentaje', () => {
@@ -103,7 +103,7 @@ describe('tipos de servicio', () => {
   });
 
   it('la tarifa incluye los extras y el acceso antes del recargo nocturno', () => {
-    const tarifa = { categoria: 'Motocarro' as const, banderazo: 4000, por_km: 1000, por_minuto: 0, minimo: 0 };
+    const tarifa = { categoria: 'Furgoneta' as const, banderazo: 4000, por_km: 1000, por_minuto: 0, minimo: 0 };
     const d = calcularTarifaDetallada({
       tarifa,
       distanciaKm: 10,
