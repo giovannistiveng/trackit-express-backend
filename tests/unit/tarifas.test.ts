@@ -30,7 +30,7 @@ describe('reglas de tarifa', () => {
   it('suma banderazo, km y minutos, redondea a 100 hacia arriba', () => {
     const d = calcularTarifaDetallada({ tarifa: MOTO, distanciaKm: 3.2, minutos: 9, recargoZona: 0, fecha: MEDIODIA });
     // 2.000 + 2.240 + 450 = 4.690 → 4.700
-    expect(d).toEqual({ categoria: 'Moto Express', banderazo: 2000, distancia: 2240, tiempo: 450, recargo_zona: 0, paradas: 0, recargo_paradas: 0, ida_y_vuelta: false, recargo_nocturno: 0, minimo_aplicado: false, total: 4700 });
+    expect(d).toEqual({ categoria: 'Moto Express', banderazo: 2000, distancia: 2240, tiempo: 450, recargo_zona: 0, paradas: 0, recargo_paradas: 0, ida_y_vuelta: false, extras: [], recargo_acceso: 0, recargo_nocturno: 0, minimo_aplicado: false, total: 4700 });
   });
 
   it('aplica la tarifa mínima en viajes cortos y el recargo nocturno del 20 %', () => {
@@ -55,8 +55,8 @@ describe('reglas de tarifa', () => {
     expect(categoriasAtendibles(['Moto Express', 'Camioneta'])).toEqual(['Moto Express', 'Motocarro', 'Camioneta']);
     expect(puedeAtender(['Motocarro'], null)).toBe(true);
     expect(puedeAtender(['Motocarro'], 'Camioneta')).toBe(false);
-    expect(vehiculosQuePuedenLlevar('Motocarro')).toEqual(['Motocarro', 'Camioneta']);
-    expect(vehiculosQuePuedenLlevar(null)).toHaveLength(3);
+    expect(vehiculosQuePuedenLlevar('Motocarro')).toEqual(['Motocarro', 'Camioneta', 'Camión']);
+    expect(vehiculosQuePuedenLlevar(null)).toHaveLength(4);
   });
 
   it('elige la zona activa más pequeña que contiene el punto', () => {
@@ -149,7 +149,7 @@ describe('casos de uso de zonas, tarifas y direcciones', () => {
     const lista = await new ListVehicleTariffsUseCase(repo as never).execute();
     expect(lista.tarifas).toBe(TARIFAS_POR_DEFECTO);
     const rota = await new ListVehicleTariffsUseCase({ findAll: () => Promise.reject(new Error('x')) } as never).execute();
-    expect(rota.tarifas).toHaveLength(3);
+    expect(rota.tarifas).toHaveLength(4);
   });
 
   it('busca direcciones y valida coordenadas', async () => {

@@ -25,7 +25,8 @@ ON CONFLICT (nombre_zona) DO NOTHING;
 INSERT INTO Tarifa_Vehiculo (categoria, banderazo, por_km, por_minuto, minimo) VALUES
     ('Moto Express', 2000, 700, 50, 4500),
     ('Motocarro', 4000, 950, 80, 8000),
-    ('Camioneta', 10000, 1600, 120, 18000)
+    ('Camioneta', 10000, 1600, 120, 18000),
+    ('Camión', 25000, 2800, 250, 45000)
 ON CONFLICT (categoria) DO NOTHING;
 
 -- Usuario administrador inicial

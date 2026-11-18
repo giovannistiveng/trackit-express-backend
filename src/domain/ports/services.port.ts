@@ -21,6 +21,20 @@ export interface DistancePort {
   calcularDistancia(origen: string, destino: string, conocidos?: PuntosConocidos): Promise<ResultadoDistancia>;
 }
 
+/** Ruta por calles para dibujar en el mapa. */
+export interface RutaTrazada {
+  km: number;
+  minutos: number;
+  /** Puntos de la línea (lat, lon). Sin servicio de rutas: los puntos pedidos en línea recta. */
+  puntos: Coordenadas[];
+  /** false si no se pudo calcular por calles. */
+  exacta: boolean;
+}
+
+export interface RoutePort {
+  trazarRuta(puntos: Coordenadas[]): Promise<RutaTrazada>;
+}
+
 export interface SugerenciaDireccion {
   /** Texto corto para mostrar y guardar ("Cra. 6 #8-20, Fusagasugá"). */
   nombre: string;

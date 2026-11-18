@@ -8,7 +8,10 @@ import { RegisterUserUseCase } from '../application/use-cases/auth/register-user
 import { ListZonesUseCase,
   ListVehicleTariffsUseCase,
   SearchAddressUseCase,
-  ReverseGeocodeUseCase, QuoteShipmentUseCase } from '../application/use-cases/catalog/catalog.use-cases';
+  ReverseGeocodeUseCase,
+  QuoteShipmentUseCase,
+  TraceRouteUseCase,
+} from '../application/use-cases/catalog/catalog.use-cases';
 import { NotificationService } from '../application/services/notification.service';
 import {
   CancelShipmentUseCase,
@@ -59,6 +62,7 @@ import {
   AcceptShipmentUseCase,
   AnnounceScheduledUseCase,
   ArriveDestinationUseCase,
+  ArrivePickupUseCase,
   CompleteStopUseCase,
   PickupShipmentUseCase,
   GetActiveServiceUseCase,
@@ -71,7 +75,9 @@ import {
   ValidateDeliveryUseCase,
 } from '../application/use-cases/shipments/driver-shipments.use-cases';
 import {
+  CheckDocumentExpiryUseCase,
   DecideDriverApprovalUseCase,
+  ReviewDriverDocumentUseCase,
   GetDriverProfileUseCase,
   GetDriverSummaryUseCase,
   ListDriverApplicantsUseCase,
@@ -104,7 +110,7 @@ import {
 import { GetPublicStatsUseCase, ListPublicZonesUseCase, SubmitContactUseCase } from '../application/use-cases/public/public.use-cases';
 import { ContactRepositoryPostgres } from './database/repositories/contact.repository.postgres';
 import { NotificationRepositoryPostgres } from './database/repositories/notification.repository.postgres';
-import { DistancePort, GeocodingPort, PasswordHasherPort, TokenServicePort } from '../domain/ports/services.port';
+import { DistancePort, GeocodingPort, PasswordHasherPort, RoutePort, TokenServicePort } from '../domain/ports/services.port';
 import { StoragePort } from '../domain/ports/storage.port';
 import { AuditRepositoryPostgres } from './database/repositories/audit.repository.postgres';
 import { DocumentoConductorRepositoryPostgres } from './database/repositories/documento-conductor.repository.postgres';
@@ -135,6 +141,7 @@ export interface Dependencias {
   hasher?: PasswordHasherPort;
   distancia?: DistancePort;
   geocodificador?: GeocodingPort;
+  rutas?: RoutePort;
   /** Hora actual (las pruebas la fijan para que el recargo nocturno no dependa del reloj). */
   reloj?: () => Date;
   storage?: StoragePort;
@@ -147,6 +154,7 @@ export function crearContenedor(d: Dependencias) {
   const osm = new OpenStreetAdapter();
   const distancia = d.distancia ?? osm;
   const geocodificador = d.geocodificador ?? osm;
+  const rutas = d.rutas ?? osm;
   const storage =
     d.storage ??
     (cloudinaryConfigurado(config.cloudinary) ? new CloudinaryStorage(config.cloudinary) : new LocalDiskStorage(config.uploadsDir, config.publicUrl));
@@ -216,6 +224,7 @@ export function crearContenedor(d: Dependencias) {
       tarifas: new ListVehicleTariffsUseCase(tarifas),
       buscarDireccion: new SearchAddressUseCase(geocodificador),
       direccionDe: new ReverseGeocodeUseCase(geocodificador),
+      ruta: new TraceRouteUseCase(rutas),
     },
     envios: {
       crear: new CreateShipmentUseCase(envios, cotizador, audit, paradas, pagos, publicador),
@@ -227,6 +236,7 @@ export function crearContenedor(d: Dependencias) {
       disponibles: new ListAvailableShipmentsUseCase(envios, drivers, vehiculos, paradas, reloj),
       activo: new GetActiveServiceUseCase(envios, drivers),
       aceptar: new AcceptShipmentUseCase(envios, drivers, vehiculos, audit, notificaciones, publicador, pagosRepo),
+      llegadaRecogida: new ArrivePickupUseCase(envios, drivers, notificaciones, reloj),
       recoger: new PickupShipmentUseCase(envios, drivers, storage, audit, notificaciones, reloj),
       iniciarRuta: new StartRouteUseCase(envios, drivers, audit, notificaciones),
       completarParada: new CompleteStopUseCase(envios, drivers, paradas, notificaciones, reloj),
@@ -258,11 +268,13 @@ export function crearContenedor(d: Dependencias) {
       desuscribir: new UnsubscribePushUseCase(pushRepo),
     },
     conductores: {
-      perfil: new GetDriverProfileUseCase(drivers, vehiculos),
+      perfil: new GetDriverProfileUseCase(drivers, vehiculos, documentos, reloj),
       registrarVehiculo: new RegisterVehicleUseCase(vehiculos, drivers, audit),
-      subirDocumento: new UploadDriverDocumentUseCase(documentos, drivers, storage, audit),
-      postulantes: new ListDriverApplicantsUseCase(drivers),
-      decidir: new DecideDriverApprovalUseCase(drivers, audit, notificaciones),
+      subirDocumento: new UploadDriverDocumentUseCase(documentos, drivers, storage, audit, reloj),
+      postulantes: new ListDriverApplicantsUseCase(drivers, documentos, vehiculos, reloj),
+      decidir: new DecideDriverApprovalUseCase(drivers, audit, notificaciones, documentos, vehiculos, reloj),
+      revisarDocumento: new ReviewDriverDocumentUseCase(documentos, drivers, audit, notificaciones, reloj),
+      vencimientos: new CheckDocumentExpiryUseCase(documentos, drivers, audit, notificaciones, reloj),
       resumen: new GetDriverSummaryUseCase(drivers, envios),
       historial: new ListDriverHistoryUseCase(drivers, envios),
     },

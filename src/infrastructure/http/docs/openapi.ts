@@ -146,7 +146,28 @@ export const openApiSpec = {
           eta_minutos: { type: 'number', nullable: true, description: 'Asignado: hasta recoger y entregar. En Ruta: hasta el destino.' },
         },
       },
-      Categoria: { type: 'string', enum: ['Moto Express', 'Motocarro', 'Camioneta'] },
+      Categoria: { type: 'string', enum: ['Moto Express', 'Motocarro', 'Camioneta', 'Camión'] },
+      DetalleServicio: {
+        type: 'object',
+        description: 'Datos según el tipo de servicio. Trasteo: objetos (obligatorio), pisos y ascensor en origen y destino, ayudantes (0–3). Mercado y mandado: lista (obligatoria) y presupuesto. Insumos: insumo y peso_kg (obligatorios) y acceso_destapado.',
+        properties: {
+          bultos: { type: 'integer', minimum: 1, maximum: 200, description: 'El conductor los cuenta al recoger' },
+          peso_kg: { type: 'integer', minimum: 1, maximum: 3500, description: 'Define el vehículo mínimo' },
+          fragil: { type: 'boolean' },
+          contacto_origen_nombre: { type: 'string' },
+          contacto_origen_telefono: { type: 'string' },
+          objetos: { type: 'string' },
+          pisos_origen: { type: 'integer' },
+          pisos_destino: { type: 'integer' },
+          ascensor_origen: { type: 'boolean' },
+          ascensor_destino: { type: 'boolean' },
+          ayudantes: { type: 'integer', minimum: 0, maximum: 3, description: '$ 25.000 cada uno' },
+          lista: { type: 'string' },
+          presupuesto: { type: 'integer' },
+          insumo: { type: 'string' },
+          acceso_destapado: { type: 'boolean', description: 'Vía destapada o finca: +15 % sobre el viaje' },
+        },
+      },
       Envio: {
         type: 'object',
         properties: {
@@ -154,6 +175,19 @@ export const openApiSpec = {
           origen: { type: 'string', example: 'Casco Urbano, Cra 6 #8-20' },
           destino: { type: 'string', example: 'Silvania' },
           tipo_carga: { type: 'string', example: 'Documentos' },
+          tipo_servicio: { type: 'string', enum: ['mandado', 'mercado', 'paquete', 'trasteo', 'insumos'] },
+          detalle_servicio: { allOf: [ref('DetalleServicio')], nullable: true },
+          etapa: {
+            type: 'string',
+            enum: ['buscando_conductor', 'yendo_a_recoger', 'en_recogida', 'en_camino', 'regresando', 'en_destino', 'entregado', 'cancelado'],
+            description: 'Paso del servicio que ven cliente y conductor por igual',
+          },
+          pide_codigo_recogida: { type: 'boolean' },
+          codigo_recogida: { type: 'string', nullable: true, description: 'Solo para el cliente dueño: lo da quien entrega la carga al conductor' },
+          llegada_recogida_en: { type: 'string', format: 'date-time', nullable: true },
+          llegada_destino_en: { type: 'string', format: 'date-time', nullable: true },
+          bultos_recogidos: { type: 'integer', nullable: true },
+          valor_compra: { type: 'number', nullable: true, description: 'Mandado o mercado: se paga en efectivo al recibir' },
           tarifa: { type: 'number', example: 39500 },
           pin_seguridad: { type: 'string', example: '4821', description: 'Solo se entrega al cliente dueño del envío' },
           estado: ref('Estado'),
@@ -347,6 +381,14 @@ export const openApiSpec = {
         responses: { '200': { description: '{ resultados: [{ nombre, detalle, coords }] }' }, '400': E400(), '401': E401, '429': error('Demasiadas búsquedas', 'Demasiadas peticiones') },
       },
     },
+    '/api/geo/ruta': {
+      get: {
+        tags: ['Catálogo'],
+        summary: 'Ruta por calles para dibujar en el mapa (sin sesión, 40 por minuto)',
+        parameters: [{ name: 'puntos', in: 'query', required: true, schema: { type: 'string' }, example: '4.3369,-74.3638;4.4036,-74.3881', description: 'De 2 a 6 puntos lat,lon separados por ;' }],
+        responses: { '200': { description: '{ km, minutos, puntos: [{lat, lon}], exacta }' }, '400': E400() },
+      },
+    },
     '/api/geo/inversa': {
       get: {
         tags: ['Catálogo'],
@@ -370,11 +412,13 @@ export const openApiSpec = {
           content: json(
             {
               type: 'object',
-              required: ['origen', 'destino', 'tipo_carga'],
+              required: ['origen', 'destino'],
               properties: {
                 origen: { type: 'string' },
                 destino: { type: 'string' },
-                tipo_carga: { type: 'string', maxLength: 80 },
+                tipo_servicio: { type: 'string', enum: ['mandado', 'mercado', 'paquete', 'trasteo', 'insumos'], default: 'paquete' },
+                detalle_servicio: ref('DetalleServicio'),
+                tipo_carga: { type: 'string', maxLength: 80, description: 'Opcional: por defecto sale del tipo de servicio' },
                 id_zona: { type: 'integer', description: 'Solo si el destino no tiene coordenadas' },
                 origen_coords: coords,
                 destino_coords: coords,
@@ -399,7 +443,8 @@ export const openApiSpec = {
               destino: 'Silvania',
               origen_coords: { lat: 4.3369, lon: -74.3638 },
               destino_coords: { lat: 4.4036, lon: -74.3881 },
-              tipo_carga: 'Documentos',
+              tipo_servicio: 'trasteo',
+              detalle_servicio: { objetos: 'Nevera, cama y 10 cajas', pisos_origen: 3, ayudantes: 1, bultos: 12 },
               metodo_pago: 'nequi',
               telefono_nequi: '3001234567',
               destinatario_nombre: 'Ana Ruiz',
@@ -620,13 +665,37 @@ export const openApiSpec = {
         security: seguro,
         requestBody: {
           required: true,
-          content: { 'multipart/form-data': { schema: { type: 'object', required: ['archivo', 'tipo_documento'], properties: { archivo: { type: 'string', format: 'binary' }, tipo_documento: { type: 'string', enum: ['Cédula', 'SOAT', 'Licencia'] } } } } },
+          content: { 'multipart/form-data': { schema: { type: 'object', required: ['archivo', 'tipo_documento'], properties: {
+                    archivo: { type: 'string', format: 'binary' },
+                    tipo_documento: { type: 'string', enum: ['Cédula', 'Selfie', 'Licencia', 'SOAT', 'Tecnomecánica', 'Tarjeta de propiedad', 'Antecedentes'] },
+                    fecha_vencimiento: { type: 'string', format: 'date', description: 'AAAA-MM-DD. Obligatoria para Licencia, SOAT y Tecnomecánica' },
+                  },
+                },
+              },
+            },
         },
-        responses: { '201': { description: 'Recibido' }, '400': E400('El archivo supera el tamaño máximo de 5 MB'), '401': E401, '403': E403 },
+        responses: { '201': { description: 'Recibido (queda en revisión)' }, '400': E400('Indica la fecha de vencimiento de: SOAT (debe estar vigente)'), '401': E401, '403': E403 },
+      },
+    },
+    '/api/admin/documentos/{id}': {
+      patch: {
+        tags: ['Administración'],
+        summary: 'Aprobar o rechazar un documento del conductor · Administrador',
+        description: 'Al rechazar, el motivo es obligatorio y el conductor recibe un aviso. Los documentos que vencen necesitan fecha de vencimiento para aprobarse.',
+        security: seguro,
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+        requestBody: {
+          required: true,
+          content: json(
+            { type: 'object', required: ['aprobado'], properties: { aprobado: { type: 'boolean' }, motivo: { type: 'string', maxLength: 255 }, fecha_vencimiento: { type: 'string', format: 'date' } } },
+            { aprobado: false, motivo: 'La foto está borrosa' },
+          ),
+        },
+        responses: { '200': { description: '{ message, documento }' }, '400': E400('Escribe el motivo del rechazo para que el conductor sepa qué corregir'), '401': E401, '403': E403, '404': E404() },
       },
     },
     '/api/conductores/pendientes': {
-      get: { tags: ['Administración'], summary: 'Conductores por aprobar (CU-011) · Administrador', security: seguro, responses: { '200': { description: 'Pendientes y rechazados con documentos', content: json({ type: 'array', items: ref('Postulante') }) }, '401': E401, '403': E403 } },
+      get: { tags: ['Administración'], summary: 'Conductores por revisar (CU-011) · Administrador', security: seguro, responses: { '200': { description: 'Pendientes, rechazados, suspendidos o con documentos en revisión, con su vehículo, requisitos y fuentes oficiales para verificar', content: json({ type: 'array', items: ref('Postulante') }) }, '401': E401, '403': E403 } },
     },
     '/api/conductores/aprobar': {
       post: {
@@ -874,15 +943,36 @@ export const openApiSpec = {
       },
     },
     // ----------------------------------------------------------- Envíos: edición, recogida, paradas
+    '/api/envios/{id}/llegada-recogida': {
+      post: {
+        tags: ['Envíos (conductor)'],
+        summary: 'El conductor llegó al punto de recogida · Conductor asignado',
+        description: 'Avisa al cliente para que tenga lista la carga y el código de recogida. Repetirlo no duplica el aviso.',
+        security: seguro,
+        parameters: [idEnvio],
+        responses: { '200': { description: '{ message, envio } con etapa "en_recogida"' }, '400': E400(), '401': E401, '403': E403 },
+      },
+    },
     '/api/envios/{id}/recogida': {
       post: {
         tags: ['Envíos (conductor)'],
-        summary: 'Foto del paquete al recogerlo: Asignado → En Ruta · Conductor asignado',
-        description: 'multipart/form-data, campo `archivo` (JPG, PNG o WebP). El cliente ve la foto y recibe un aviso.',
+        summary: 'Recoger la carga: código, bultos, compra y foto. Asignado → En Ruta · Conductor asignado',
+        description:
+          'multipart/form-data: `archivo` (JPG, PNG o WebP), `codigo_recogida` (si el envío lo pide), `bultos` (si el cliente los declaró) y `valor_compra` (mandados y mercados). Si los bultos no coinciden, el cliente recibe un aviso.',
         security: seguro,
         parameters: [idEnvio],
-        requestBody: { required: true, content: { 'multipart/form-data': { schema: { type: 'object', properties: { archivo: { type: 'string', format: 'binary' } } } } } },
-        responses: { '200': { description: '{ message, envio }' }, '400': E400('Toma la foto del paquete al recogerlo'), '401': E401, '403': E403 },
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: { archivo: { type: 'string', format: 'binary' }, codigo_recogida: { type: 'string' }, bultos: { type: 'integer' }, valor_compra: { type: 'integer' } },
+              },
+            },
+          },
+        },
+        responses: { '200': { description: '{ message, envio }' }, '400': E400('El código de recogida no coincide'), '401': E401, '403': E403 },
       },
     },
     '/api/envios/{id}/paradas/{idParada}/completar': {
@@ -897,10 +987,11 @@ export const openApiSpec = {
     '/api/envios/{id}/llegada-destino': {
       post: {
         tags: ['Envíos (conductor)'],
-        summary: 'Ida y vuelta: llegó al destino y regresa al origen · Conductor asignado',
+        summary: 'El conductor llegó al punto de entrega · Conductor asignado',
+        description: 'Avisa al cliente para que tenga listo el PIN. En ida y vuelta, la primera llegada es al destino (el conductor regresa) y la segunda es la entrega final en el origen.',
         security: seguro,
         parameters: [idEnvio],
-        responses: { '200': { description: '{ message, envio }' }, '400': E400('Este envío no es de ida y vuelta'), '401': E401, '403': E403 },
+        responses: { '200': { description: '{ message, envio } con etapa "en_destino" o "regresando"' }, '400': E400('Recoge la carga antes de marcar la llegada'), '401': E401, '403': E403 },
       },
     },
     // ----------------------------------------------------------- Pagos

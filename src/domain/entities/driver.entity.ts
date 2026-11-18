@@ -1,4 +1,4 @@
-export type EstadoAprobacion = 'Pendiente' | 'Aprobado' | 'Rechazado';
+export type EstadoAprobacion = 'Pendiente' | 'Aprobado' | 'Rechazado' | 'Suspendido';
 
 export interface Conductor {
   id_conductor: number;

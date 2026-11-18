@@ -1,8 +1,7 @@
 import { VehicleCategory } from '../../../domain/entities/vehicle.entity';
 import { Pool } from 'pg';
 import { Conductor, EstadoAprobacion } from '../../../domain/entities/driver.entity';
-import { ConductorPostulante, DriverRepositoryPort } from '../../../domain/ports/driver.repository.port';
-import { TipoDocumento } from '../../../domain/entities/documento-conductor.entity';
+import { DriverRepositoryPort } from '../../../domain/ports/driver.repository.port';
 
 interface ConductorRow {
   id_conductor: number;
@@ -46,24 +45,23 @@ export class DriverRepositoryPostgres implements DriverRepositoryPort {
     ]);
   }
 
-  async listApplicants(): Promise<ConductorPostulante[]> {
-    const r = await this.pool.query<ConductorRow & { documentos: { tipo_documento: TipoDocumento; url_archivo: string }[] | null }>(
-      `SELECT c.id_conductor, c.id_usuario, c.estado_aprobacion, c.motivo_rechazo, u.nombre, u.correo, docs.documentos
+  async listApplicants(): Promise<Conductor[]> {
+    const r = await this.pool.query<ConductorRow>(
+      `SELECT c.id_conductor, c.id_usuario, c.estado_aprobacion, c.motivo_rechazo, u.nombre, u.correo
        FROM Conductor c
        JOIN Usuario u ON u.id_usuario = c.id_usuario
-       CROSS JOIN LATERAL (
-           SELECT json_agg(json_build_object('tipo_documento', d.tipo_documento, 'url_archivo', d.url_archivo) ORDER BY d.tipo_documento) AS documentos
-           FROM (
-             SELECT DISTINCT ON (dc.tipo_documento) dc.tipo_documento, dc.url_archivo
-             FROM Documento_Conductor dc
-             WHERE dc.id_conductor = c.id_conductor
-             ORDER BY dc.tipo_documento, dc.fecha_subida DESC, dc.id_documento DESC
-           ) d
-         ) docs
-       WHERE c.estado_aprobacion IN ('Pendiente', 'Rechazado')
-       ORDER BY (c.estado_aprobacion = 'Pendiente') DESC, c.id_conductor`,
+       WHERE c.estado_aprobacion IN ('Pendiente', 'Rechazado', 'Suspendido')
+          OR EXISTS (
+            SELECT 1 FROM (
+              SELECT DISTINCT ON (dc.tipo_documento) dc.estado
+              FROM Documento_Conductor dc
+              WHERE dc.id_conductor = c.id_conductor
+              ORDER BY dc.tipo_documento, dc.fecha_subida DESC, dc.id_documento DESC
+            ) ult WHERE ult.estado = 'Pendiente'
+          )
+       ORDER BY CASE c.estado_aprobacion WHEN 'Pendiente' THEN 0 WHEN 'Suspendido' THEN 1 WHEN 'Aprobado' THEN 2 ELSE 3 END, c.id_conductor`,
     );
-    return r.rows.map((row) => ({ ...this.mapRow(row), documentos: row.documentos ?? [] }));
+    return r.rows.map((row) => this.mapRow(row));
   }
 
   async averageRating(id_conductor: number): Promise<number | null> {

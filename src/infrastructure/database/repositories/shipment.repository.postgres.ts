@@ -8,8 +8,10 @@ import {
   FiltroEnviosAdmin,
   HistorialEstadoRow,
   ResumenConductor,
+  DatosRecogida,
   ShipmentRepositoryPort,
 } from '../../../domain/ports/shipment.repository.port';
+import { DetalleServicio, TipoServicio } from '../../../domain/services/servicios';
 import { ANTICIPO_PROGRAMADO_MIN, COMISION_PLATAFORMA } from '../../../domain/entities/shipment.entity';
 import { ValidationError } from '../../../shared/errors';
 import { NumeroPg, esViolacionUnica, patronBusqueda } from '../pg-utils';
@@ -45,6 +47,13 @@ interface EnvioRow {
   destino_visitado_en?: Date | null;
   url_foto_recogida?: string | null;
   fecha_recogida?: Date | null;
+  tipo_servicio?: TipoServicio;
+  detalle_servicio?: DetalleServicio | null;
+  codigo_recogida?: string | null;
+  llegada_recogida_en?: Date | null;
+  llegada_destino_en?: Date | null;
+  bultos_recogidos?: number | null;
+  valor_compra?: NumeroPg;
   estado: EstadoEnvio;
   fecha_ultimo_cambio?: Date | null;
   calificacion?: NumeroPg;
@@ -82,8 +91,9 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
       const result = await client.query<EnvioRow>(
         `INSERT INTO Envio (origen, destino, tipo_carga, tarifa, pin_seguridad, id_cliente, id_zona, categoria,
                             origen_lat, origen_lon, destino_lat, destino_lon, distancia_km, notas, duracion_min, desglose,
-                            metodo_pago, token_seguimiento, destinatario_nombre, destinatario_telefono, fecha_programada, ida_y_vuelta)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                            metodo_pago, token_seguimiento, destinatario_nombre, destinatario_telefono, fecha_programada, ida_y_vuelta,
+                            tipo_servicio, detalle_servicio, codigo_recogida)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
          RETURNING *`,
         [
           envio.origen,
@@ -108,6 +118,9 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
           envio.destinatario_telefono ?? null,
           envio.fecha_programada ?? null,
           envio.ida_y_vuelta ?? false,
+          envio.tipo_servicio ?? 'paquete',
+          envio.detalle_servicio ? JSON.stringify(envio.detalle_servicio) : null,
+          envio.codigo_recogida ?? null,
         ],
       );
       const row = result.rows[0];
@@ -201,11 +214,16 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
     await this.pool.query(`UPDATE Envio SET ${sets.join(', ')} WHERE id_envio = $${params.length}`, params);
   }
 
-  async registerPickup(id_envio: number, url_foto: string, ahora: Date): Promise<void> {
+  async registerPickup(id_envio: number, url_foto: string, ahora: Date, datos: DatosRecogida = {}): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('UPDATE Envio SET url_foto_recogida = $1, fecha_recogida = $2 WHERE id_envio = $3', [url_foto, ahora, id_envio]);
+      await client.query(
+        `UPDATE Envio SET url_foto_recogida = $1, fecha_recogida = $2, bultos_recogidos = $3, valor_compra = $4,
+                llegada_recogida_en = COALESCE(llegada_recogida_en, $2)
+         WHERE id_envio = $5`,
+        [url_foto, ahora, datos.bultos ?? null, datos.valor_compra ?? null, id_envio],
+      );
       await client.query(`INSERT INTO Historial_Estado (estado, id_envio) VALUES ('En Ruta', $1)`, [id_envio]);
       await client.query('COMMIT');
     } catch (error) {
@@ -214,6 +232,14 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
     } finally {
       client.release();
     }
+  }
+
+  async markPickupArrival(id_envio: number, ahora: Date): Promise<void> {
+    await this.pool.query('UPDATE Envio SET llegada_recogida_en = $1 WHERE id_envio = $2 AND llegada_recogida_en IS NULL', [ahora, id_envio]);
+  }
+
+  async markDestinationArrival(id_envio: number, ahora: Date): Promise<void> {
+    await this.pool.query('UPDATE Envio SET llegada_destino_en = $1 WHERE id_envio = $2 AND llegada_destino_en IS NULL', [ahora, id_envio]);
   }
 
   async markDestinationVisited(id_envio: number, ahora: Date): Promise<void> {
@@ -444,6 +470,13 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
       destino_visitado_en: row.destino_visitado_en ? new Date(row.destino_visitado_en) : null,
       url_foto_recogida: row.url_foto_recogida ?? null,
       fecha_recogida: row.fecha_recogida ? new Date(row.fecha_recogida) : null,
+      tipo_servicio: row.tipo_servicio ?? 'paquete',
+      detalle_servicio: row.detalle_servicio ?? null,
+      codigo_recogida: row.codigo_recogida ?? null,
+      llegada_recogida_en: row.llegada_recogida_en ? new Date(row.llegada_recogida_en) : null,
+      llegada_destino_en: row.llegada_destino_en ? new Date(row.llegada_destino_en) : null,
+      bultos_recogidos: row.bultos_recogidos ?? null,
+      valor_compra: row.valor_compra === null || row.valor_compra === undefined ? null : Number(row.valor_compra),
       estado: row.estado,
     };
   }

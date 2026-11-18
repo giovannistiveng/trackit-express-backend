@@ -5,15 +5,17 @@ export interface Intervalos {
   pagosMs: number;
   programadosMs: number;
   liquidacionesMs: number;
+  documentosMs: number;
 }
 
-export const INTERVALOS: Intervalos = { pagosMs: 15_000, programadosMs: 60_000, liquidacionesMs: 60 * 60_000 };
+export const INTERVALOS: Intervalos = { pagosMs: 15_000, programadosMs: 60_000, liquidacionesMs: 60 * 60_000, documentosMs: 6 * 60 * 60_000 };
 
 /**
  * Tareas en segundo plano del servidor:
  *  - cada 15 s consulta los cobros Nequi pendientes (aprobado, rechazado, vencido);
  *  - cada minuto anuncia a los conductores los envíos programados que ya entran al tablero;
- *  - cada hora genera las liquidaciones de la semana anterior (idempotente: solo una vez por semana).
+ *  - cada hora genera las liquidaciones de la semana anterior (idempotente: solo una vez por semana);
+ *  - cada 6 horas revisa los documentos de los conductores: suspende si alguno venció y avisa antes.
  * Cada tarea evita solaparse consigo misma y un error nunca detiene las demás.
  */
 export function iniciarTareas(c: Contenedor, log: Logger, i: Intervalos = INTERVALOS): () => void {
@@ -41,10 +43,15 @@ export function iniciarTareas(c: Contenedor, log: Logger, i: Intervalos = INTERV
     const creadas = await c.pagos.generarLiquidaciones.execute(null);
     if (creadas.length > 0) log.info(`${creadas.length} liquidación(es) semanal(es) generadas`);
   });
+  const documentos = tarea('documentos', async () => {
+    const r = await c.conductores.vencimientos.execute();
+    if (r.suspendidos + r.avisados > 0) log.info(`Documentos: ${r.suspendidos} conductor(es) suspendido(s), ${r.avisados} aviso(s) de vencimiento`);
+  });
   // tarea() ya captura los errores, así que la promesa se descarta a propósito
   const cada = (fn: () => Promise<void>, ms: number) => setInterval(() => void fn(), ms);
-  const timers = [cada(pagos, i.pagosMs), cada(programados, i.programadosMs), cada(liquidaciones, i.liquidacionesMs)];
+  const timers = [cada(pagos, i.pagosMs), cada(programados, i.programadosMs), cada(liquidaciones, i.liquidacionesMs), cada(documentos, i.documentosMs)];
   timers.forEach((t) => t.unref());
   void liquidaciones();
+  void documentos();
   return () => timers.forEach(clearInterval);
 }

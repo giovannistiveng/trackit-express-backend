@@ -321,7 +321,7 @@ describe('Tareas en segundo plano y fechas', () => {
     const programados = jest.fn(async () => Promise.reject(new Error('bd')));
     const liquidaciones = jest.fn(async () => [{}]);
     const c = { pagos: { procesarPendientes: { execute: pagos }, generarLiquidaciones: { execute: liquidaciones } }, envios: { anunciarProgramados: { execute: programados } } } as unknown as Contenedor;
-    const detener = iniciarTareas(c, logger.child('Prueba'), { pagosMs: 10, programadosMs: 10, liquidacionesMs: 10 });
+    const detener = iniciarTareas(c, logger.child('Prueba'), { pagosMs: 10, programadosMs: 10, liquidacionesMs: 10, documentosMs: 10 });
     await new Promise((r) => setTimeout(r, 60));
     detener();
     expect(pagos).toHaveBeenCalled();

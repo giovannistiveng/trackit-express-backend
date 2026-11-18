@@ -1,6 +1,6 @@
 {
   "name": "trackit-express-backend",
-  "version": "2.0.0",
+  "version": "2.5.0",
   "description": "Backend de TrackIt Express - Node.js, Express, TypeScript, Arquitectura Hexagonal",
   "main": "dist/infrastructure/http/server.js",
   "scripts": {
@@ -17,7 +17,8 @@
     "db:setup": "ts-node --transpile-only src/infrastructure/database/cli.ts setup",
     "db:migrate": "ts-node --transpile-only src/infrastructure/database/cli.ts migrate",
     "db:prepare": "node dist/infrastructure/database/cli.js preparar",
-    "sonar": "sonar-scanner-npm"
+    "sonar": "sonar-scanner-npm",
+    "vapid": "web-push generate-vapid-keys"
   },
   "keywords": [
     "trackit",

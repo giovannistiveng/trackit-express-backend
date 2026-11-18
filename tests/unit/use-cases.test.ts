@@ -1,3 +1,4 @@
+import { FakeDocumentos } from '../helpers/fakes';
 import { AuditService } from '../../src/application/services/audit.service';
 import { presentarEnvio } from '../../src/application/services/envio.presenter';
 import { esContrasenaSegura, idValido, textoValido } from '../../src/application/validation';
@@ -184,7 +185,7 @@ describe('casos de uso del conductor', () => {
   });
 
   it('subir documento valida tipo de documento, archivo y tipo de archivo', async () => {
-    const uc = new UploadDriverDocumentUseCase({ create: jest.fn(), findByConductor: jest.fn() }, d, storage, auditFalso().audit);
+    const uc = new UploadDriverDocumentUseCase(new FakeDocumentos(), d, storage, auditFalso().audit);
     await expect(uc.execute(CONDUCTOR, { tipo_documento: 'Pasaporte' }, JPG)).rejects.toThrow('Tipo de documento inválido');
     await expect(uc.execute(CONDUCTOR, { tipo_documento: 'SOAT' })).rejects.toThrow('No se proporcionó ningún archivo');
     await expect(uc.execute(CONDUCTOR, { tipo_documento: 'SOAT' }, { ...JPG, mimetype: 'text/plain' })).rejects.toThrow('Solo se permiten imágenes o PDF');

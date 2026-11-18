@@ -9,7 +9,7 @@ import { logger } from '../../src/shared/logger';
 import { crearContenedor } from '../../src/infrastructure/container';
 import { crearApp } from '../../src/infrastructure/http/app';
 import { LocalDiskStorage } from '../../src/infrastructure/external/local-disk.storage';
-import { DistancePort, GeocodingPort } from '../../src/domain/ports/services.port';
+import { DistancePort, GeocodingPort, RoutePort } from '../../src/domain/ports/services.port';
 import { CorreoSaliente, EstadoGateway, MailerPort, PaymentGatewayPort, PushSenderPort } from '../../src/domain/ports/platform.ports';
 
 export const DIR_UPLOADS = path.join(os.tmpdir(), 'trackit-test-uploads');
@@ -25,6 +25,11 @@ export const MEDIODIA = new Date('2026-10-29T17:00:00Z');
 export const geocodificadorFijo: GeocodingPort = {
   buscar: async (q: string) => (/silvania/i.test(q) ? [{ nombre: 'Silvania', detalle: 'Silvania, Cundinamarca', coords: SILVANIA }] : []),
   inversa: async (p) => ({ nombre: 'Parque principal, Fusagasugá', detalle: 'Fusagasugá', coords: p }),
+};
+
+/** Ruta fija para el mapa: une los puntos pedidos. */
+export const rutaFija: RoutePort = {
+  trazarRuta: async (puntos) => ({ km: 34.5, minutos: 69, puntos, exacta: true }),
 };
 
 /** Distancia fija: las pruebas no dependen de OpenStreetMap. */
@@ -145,6 +150,7 @@ export function crearContenedorPrueba(reloj: () => Date = () => MEDIODIA) {
     log: logger,
     distancia: distanciaFija,
     geocodificador: geocodificadorFijo,
+    rutas: rutaFija,
     reloj,
     storage: new LocalDiskStorage(DIR_UPLOADS, 'http://localhost:3000'),
     mailer: buzon,
@@ -170,3 +176,28 @@ export async function sesionAdmin(app: Parameters<typeof request>[0]) {
   const r = await request(app).post('/api/auth/login').send({ correo: 'admin@trackit.com.co', password: 'Admin2026*' });
   return { token: r.body.token as string, id: r.body.user.id as number };
 }
+
+const FOTO = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+/** Fecha de vencimiento válida para las pruebas: dentro de un año. */
+export const UN_ANO = new Date(Date.now() + 365 * 86_400_000).toISOString().slice(0, 10);
+
+/** Sube los documentos obligatorios del conductor (con vencimiento donde aplica). */
+export async function subirRequisitos(app: Parameters<typeof request>[0], token: string) {
+  for (const tipo of ['Cédula', 'Selfie', 'Licencia', 'SOAT', 'Tarjeta de propiedad', 'Antecedentes']) {
+    const r = request(app).post('/api/documentos/upload').set({ Authorization: `Bearer ${token}` }).field('tipo_documento', tipo);
+    if (tipo === 'Licencia' || tipo === 'SOAT') r.field('fecha_vencimiento', UN_ANO);
+    await r.attach('archivo', FOTO, { filename: 'doc.jpg', contentType: 'image/jpeg' });
+  }
+}
+
+/** Documentos subidos, revisados uno por uno y conductor aprobado (requiere vehículo registrado). */
+export async function aprobarConductor(app: Parameters<typeof request>[0], tokenConductor: string, tokenAdmin: string, idConductor: number) {
+  const admin = { Authorization: `Bearer ${tokenAdmin}` };
+  await subirRequisitos(app, tokenConductor);
+  const lista = (await request(app).get('/api/conductores/pendientes').set(admin)).body as { id_conductor: number; documentos: { id: number }[] }[];
+  const yo = lista.find((c) => c.id_conductor === idConductor);
+  for (const d of yo?.documentos ?? []) await request(app).patch(`/api/admin/documentos/${d.id}`).set(admin).send({ aprobado: true });
+  return request(app).post('/api/conductores/aprobar').set(admin).send({ driverId: idConductor, approved: true });
+}
+

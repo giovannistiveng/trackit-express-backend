@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS Usuario (
 -- Tabla: Conductor
 CREATE TABLE IF NOT EXISTS Conductor (
     id_conductor SERIAL PRIMARY KEY,
-    estado_aprobacion VARCHAR(30) NOT NULL DEFAULT 'Pendiente' CHECK (estado_aprobacion IN ('Pendiente', 'Aprobado', 'Rechazado')),
+    estado_aprobacion VARCHAR(30) NOT NULL DEFAULT 'Pendiente' CONSTRAINT chk_conductor_estado CHECK (estado_aprobacion IN ('Pendiente', 'Aprobado', 'Rechazado', 'Suspendido')),
     motivo_rechazo VARCHAR(255),
     id_usuario INTEGER NOT NULL UNIQUE,
     CONSTRAINT fk_conductor_usuario FOREIGN KEY (id_usuario) REFERENCES Usuario(id_usuario)
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS Conductor (
 CREATE TABLE IF NOT EXISTS Vehiculo (
     id_vehiculo SERIAL PRIMARY KEY,
     placa VARCHAR(20) NOT NULL UNIQUE,
-    categoria VARCHAR(50) NOT NULL CHECK (categoria IN ('Moto Express', 'Motocarro', 'Camioneta')),
+    categoria VARCHAR(50) NOT NULL CONSTRAINT chk_vehiculo_categoria CHECK (categoria IN ('Moto Express', 'Motocarro', 'Camioneta', 'Camión')),
     id_conductor INTEGER NOT NULL,
     CONSTRAINT fk_vehiculo_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor)
 );
@@ -43,10 +43,17 @@ CREATE TABLE IF NOT EXISTS Vehiculo (
 -- Tabla: Documento_Conductor
 CREATE TABLE IF NOT EXISTS Documento_Conductor (
     id_documento SERIAL PRIMARY KEY,
-    tipo_documento VARCHAR(50) NOT NULL CHECK (tipo_documento IN ('Cédula', 'SOAT', 'Licencia')),
+    tipo_documento VARCHAR(50) NOT NULL CONSTRAINT chk_documento_tipo
+        CHECK (tipo_documento IN ('Cédula', 'Selfie', 'Licencia', 'SOAT', 'Tecnomecánica', 'Tarjeta de propiedad', 'Antecedentes')),
     url_archivo VARCHAR(500) NOT NULL,
     id_conductor INTEGER NOT NULL,
     fecha_subida TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Revisión del administrador, documento por documento
+    estado VARCHAR(20) NOT NULL DEFAULT 'Pendiente' CONSTRAINT chk_documento_estado CHECK (estado IN ('Pendiente', 'Aprobado', 'Rechazado')),
+    motivo_rechazo VARCHAR(255),
+    fecha_vencimiento DATE,
+    revisado_en TIMESTAMP,
+    aviso_vencimiento_en TIMESTAMP,
     CONSTRAINT fk_documento_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor)
 );
 
@@ -67,7 +74,7 @@ CREATE TABLE IF NOT EXISTS Zona_Tarifa (
 
 -- Tabla: Tarifa_Vehiculo (precio = banderazo + km × por_km + min × por_minuto, con mínimo)
 CREATE TABLE IF NOT EXISTS Tarifa_Vehiculo (
-    categoria VARCHAR(50) PRIMARY KEY CHECK (categoria IN ('Moto Express', 'Motocarro', 'Camioneta')),
+    categoria VARCHAR(50) PRIMARY KEY CONSTRAINT chk_tarifa_categoria CHECK (categoria IN ('Moto Express', 'Motocarro', 'Camioneta', 'Camión')),
     banderazo DECIMAL(10,2) NOT NULL CHECK (banderazo >= 0),
     por_km DECIMAL(10,2) NOT NULL CHECK (por_km >= 0),
     por_minuto DECIMAL(10,2) NOT NULL CHECK (por_minuto >= 0),
@@ -86,7 +93,7 @@ CREATE TABLE IF NOT EXISTS Envio (
     id_cliente INTEGER NOT NULL,
     id_conductor INTEGER,
     id_zona INTEGER NOT NULL,
-    categoria VARCHAR(50) CHECK (categoria IS NULL OR categoria IN ('Moto Express', 'Motocarro', 'Camioneta')),
+    categoria VARCHAR(50) CONSTRAINT chk_envio_categoria CHECK (categoria IS NULL OR categoria IN ('Moto Express', 'Motocarro', 'Camioneta', 'Camión')),
     fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     origen_lat DECIMAL(9,6),
     origen_lon DECIMAL(9,6),
@@ -107,6 +114,16 @@ CREATE TABLE IF NOT EXISTS Envio (
     destino_visitado_en TIMESTAMP,
     url_foto_recogida VARCHAR(500),
     fecha_recogida TIMESTAMP,
+    -- Tipo de servicio y su detalle (pisos, ayudantes, peso, lista de compras…)
+    tipo_servicio VARCHAR(20) NOT NULL DEFAULT 'paquete'
+        CONSTRAINT chk_envio_tipo_servicio CHECK (tipo_servicio IN ('mandado', 'mercado', 'paquete', 'trasteo', 'insumos')),
+    detalle_servicio JSONB,
+    -- Etapas de la entrega
+    codigo_recogida VARCHAR(6),
+    llegada_recogida_en TIMESTAMP,
+    llegada_destino_en TIMESTAMP,
+    bultos_recogidos SMALLINT,
+    valor_compra DECIMAL(12,2),
     CONSTRAINT chk_envio_metodo_pago CHECK (metodo_pago IN ('efectivo', 'nequi')),
     CONSTRAINT fk_envio_cliente FOREIGN KEY (id_cliente) REFERENCES Usuario(id_usuario),
     CONSTRAINT fk_envio_conductor FOREIGN KEY (id_conductor) REFERENCES Conductor(id_conductor),
@@ -283,6 +300,7 @@ CREATE TABLE IF NOT EXISTS Suscripcion_Push (
 CREATE INDEX IF NOT EXISTS idx_usuario_correo ON Usuario(correo);
 CREATE INDEX IF NOT EXISTS idx_usuario_rol ON Usuario(id_rol);
 CREATE INDEX IF NOT EXISTS idx_conductor_usuario ON Conductor(id_usuario);
+CREATE INDEX IF NOT EXISTS idx_documento_conductor ON Documento_Conductor (id_conductor, tipo_documento, fecha_subida DESC);
 CREATE INDEX IF NOT EXISTS idx_vehiculo_conductor ON Vehiculo(id_conductor);
 CREATE INDEX IF NOT EXISTS idx_envio_cliente ON Envio(id_cliente);
 CREATE INDEX IF NOT EXISTS idx_envio_conductor ON Envio(id_conductor);

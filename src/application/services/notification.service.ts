@@ -14,7 +14,9 @@ export interface OpcionesNotificacion {
 export function rutaNotificacion(n: Pick<Notificacion, 'tipo' | 'id_envio'>): string {
   if (n.tipo === 'nuevo_servicio') return '/conductor/tablero';
   if (n.tipo === 'liquidacion' || n.tipo === 'calificacion_recibida') return '/conductor/ganancias';
-  if (n.tipo === 'conductor_aprobado' || n.tipo === 'conductor_rechazado') return '/conductor/perfil';
+  if (['conductor_aprobado', 'conductor_rechazado', 'documento_revisado', 'documento_por_vencer', 'conductor_suspendido'].includes(n.tipo)) {
+    return '/conductor/perfil';
+  }
   return n.id_envio ? `/envios/${n.id_envio}` : '/';
 }
 

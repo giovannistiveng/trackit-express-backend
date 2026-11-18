@@ -13,7 +13,18 @@ import { TarifaVehiculoRepositoryPort } from '../../domain/ports/tarifa-vehiculo
 import { ZonaTarifaRepositoryPort } from '../../domain/ports/zona-tarifa.repository.port';
 import { coordenadasValidas } from '../../domain/services/geo';
 import {
-  CATEGORIA_POR_DEFECTO,
+  DetalleInvalido,
+  DetalleServicio,
+  SERVICIOS,
+  TIPOS_SERVICIO,
+  TipoServicio,
+  detalleValido,
+  esTipoServicio,
+  extrasServicio,
+  recargoAcceso,
+  vehiculosParaServicio,
+} from '../../domain/services/servicios';
+import {
   DesgloseTarifa,
   calcularTarifaDetallada,
   esNocturno,
@@ -27,6 +38,7 @@ export const TARIFAS_POR_DEFECTO: TarifaVehiculo[] = [
   { categoria: 'Moto Express', banderazo: 2000, por_km: 700, por_minuto: 50, minimo: 4500 },
   { categoria: 'Motocarro', banderazo: 4000, por_km: 950, por_minuto: 80, minimo: 8000 },
   { categoria: 'Camioneta', banderazo: 10000, por_km: 1600, por_minuto: 120, minimo: 18000 },
+  { categoria: 'Camión', banderazo: 25000, por_km: 2800, por_minuto: 250, minimo: 45000 },
 ];
 
 export interface SolicitudRuta {
@@ -41,6 +53,10 @@ export interface SolicitudRuta {
   ida_y_vuelta?: unknown;
   /** Fecha y hora ISO para programar el envío. */
   fecha_programada?: unknown;
+  /** mandado | mercado | paquete | trasteo | insumos (por defecto paquete). */
+  tipo_servicio?: unknown;
+  /** Datos del tipo de servicio: pisos, ayudantes, peso, lista… */
+  detalle_servicio?: unknown;
 }
 
 export interface OpcionVehiculo {
@@ -63,6 +79,10 @@ export interface Cotizacion {
   paradas: Parada[];
   idaYVuelta: boolean;
   fechaProgramada: Date | null;
+  tipoServicio: TipoServicio;
+  detalle: DetalleServicio;
+  /** Vehículo más pequeño que puede hacer este servicio. */
+  vehiculoMinimo: VehicleCategory;
 }
 
 /** Paradas validadas: dirección, coordenadas (obligatorias) y notas. */
@@ -98,12 +118,24 @@ export function fechaProgramadaValida(valor: unknown, ahora: Date): Date | null 
   return f;
 }
 
+export const MENSAJE_CATEGORIA = `Categoría inválida. Debe ser: ${CATEGORIAS_VEHICULO.slice(0, -1).join(', ')} o ${CATEGORIAS_VEHICULO.at(-1)}`;
+
 export function categoriaOpcional(valor: unknown): VehicleCategory | null {
   if (valor === undefined || valor === null || valor === '') return null;
-  if (!(CATEGORIAS_VEHICULO as readonly string[]).includes(String(valor))) {
-    throw new ValidationError('Categoría inválida. Debe ser: Moto Express, Motocarro o Camioneta');
-  }
+  if (!(CATEGORIAS_VEHICULO as readonly string[]).includes(String(valor))) throw new ValidationError(MENSAJE_CATEGORIA);
   return valor as VehicleCategory;
+}
+
+/** Tipo de servicio y su detalle validados (sin tipo: paquete). */
+export function servicioValido(tipoCrudo: unknown, detalleCrudo: unknown): { tipo: TipoServicio; detalle: DetalleServicio } {
+  const tipo = tipoCrudo === undefined || tipoCrudo === null || tipoCrudo === '' ? 'paquete' : tipoCrudo;
+  if (!esTipoServicio(tipo)) throw new ValidationError(`Tipo de servicio inválido. Debe ser: ${TIPOS_SERVICIO.join(', ')}`);
+  try {
+    return { tipo, detalle: detalleValido(tipo, detalleCrudo) };
+  } catch (e) {
+    if (e instanceof DetalleInvalido) throw new ValidationError(e.message);
+    throw e;
+  }
 }
 
 /**
@@ -124,6 +156,12 @@ export class Cotizador {
     const origen = textoValido(input.origen, 'origen', 3, 200);
     const destino = textoValido(input.destino, 'destino', 3, 200);
     const categoria = categoriaOpcional(input.categoria);
+    const { tipo, detalle } = servicioValido(input.tipo_servicio, input.detalle_servicio);
+    const posibles = vehiculosParaServicio(tipo, detalle);
+    if (categoria && !posibles.includes(categoria)) {
+      const peso = detalle.peso_kg ? ' de ' + detalle.peso_kg + ' kg' : '';
+      throw new ValidationError(`Este pedido de ${SERVICIOS[tipo].nombre.toLowerCase()}${peso} necesita mínimo ${posibles[0]}`);
+    }
     const conocidoOrigen = coordenadasOpcionales(input.origen_coords, 'origen_coords');
     const conocidoDestino = coordenadasOpcionales(input.destino_coords, 'destino_coords');
     if (origen.toLowerCase() === destino.toLowerCase() && !conocidoOrigen && !conocidoDestino) {
@@ -149,7 +187,9 @@ export class Cotizador {
     const minutos = Math.max(1, Math.round(ruta.duracion_segundos / 60));
     // El recargo nocturno depende de la hora del servicio, no de cuándo se cotiza
     const fecha = fechaProgramada ?? ahora;
-    const tarifas = await this.tarifasVigentes();
+    const tarifas = (await this.tarifasVigentes()).filter((t) => posibles.includes(t.categoria));
+    const extras = extrasServicio(tipo, detalle);
+    const porcentajeAcceso = recargoAcceso(tipo, detalle);
     const calcular = (t: TarifaVehiculo) =>
       calcularTarifaDetallada({
         tarifa: t,
@@ -159,13 +199,16 @@ export class Cotizador {
         fecha,
         paradas: paradas.length,
         idaYVuelta,
+        extras,
+        porcentajeAcceso,
       });
 
     const opciones = tarifas.map((t) => {
       const d = calcular(t);
       return { categoria: t.categoria, tarifa_total: d.total, minimo_aplicado: d.minimo_aplicado };
     });
-    const elegida = tarifas.find((t) => t.categoria === (categoria ?? CATEGORIA_POR_DEFECTO)) ?? tarifas[0];
+    if (tarifas.length === 0) throw new ValidationError('No hay tarifas para los vehículos que pueden hacer este servicio');
+    const elegida = tarifas.find((t) => t.categoria === (categoria ?? posibles[0])) ?? tarifas[0];
     return {
       origen,
       destino,
@@ -180,6 +223,9 @@ export class Cotizador {
       paradas,
       idaYVuelta,
       fechaProgramada,
+      tipoServicio: tipo,
+      detalle,
+      vehiculoMinimo: posibles[0],
     };
   }
 

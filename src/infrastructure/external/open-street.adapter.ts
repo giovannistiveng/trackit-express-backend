@@ -5,6 +5,8 @@ import {
   GeocodingPort,
   PuntosConocidos,
   ResultadoDistancia,
+  RoutePort,
+  RutaTrazada,
   SugerenciaDireccion,
 } from '../../domain/ports/services.port';
 import { coordenadasValidas, haversineKm, minutosEstimados } from '../../domain/services/geo';
@@ -73,10 +75,11 @@ class CacheTemporal<T> {
  * OpenStreetMap: Nominatim para buscar direcciones y OSRM para la distancia por carretera.
  * Si un servicio no responde, se estima con línea recta × 1,35 a 30 km/h.
  */
-export class OpenStreetAdapter implements DistancePort, GeocodingPort {
+export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort {
   private readonly userAgent: string;
   private readonly cacheBusqueda = new CacheTemporal<SugerenciaDireccion[]>();
   private readonly cacheRuta = new CacheTemporal<{ km: number; segundos: number }>();
+  private readonly cacheTrazo = new CacheTemporal<RutaTrazada>(200);
   private cola: Promise<unknown> = Promise.resolve();
   private ultimaPeticion = 0;
 
@@ -190,6 +193,39 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort {
       log.warn(`OSRM no respondió (${e instanceof Error ? e.message : String(e)}); se estima con línea recta`);
       const km = Math.max(0.3, rectaKm * FACTOR_RUTA);
       return { km, segundos: minutosEstimados(rectaKm) * 60 };
+    }
+  }
+
+  /** Ruta por calles con su geometría (para el mapa). Si OSRM falla, une los puntos en línea recta. */
+  async trazarRuta(puntos: Coordenadas[]): Promise<RutaTrazada> {
+    const clave = puntos.map((p) => `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join(';');
+    const enCache = this.cacheTrazo.obtener(clave);
+    if (enCache) return enCache;
+    try {
+      const coords = puntos.map((p) => `${p.lon},${p.lat}`).join(';');
+      const url = `${this.urlOsrm}/route/v1/driving/${coords}?overview=simplified&geometries=geojson&alternatives=false`;
+      const r = await this.conTiempo(url, {});
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = (await r.json()) as {
+        code?: string;
+        routes?: { distance: number; duration: number; geometry?: { coordinates?: [number, number][] } }[];
+      };
+      const ruta = data.routes?.[0];
+      const linea = ruta?.geometry?.coordinates ?? [];
+      if (data.code !== 'Ok' || !ruta || linea.length < 2) throw new Error(data.code ?? 'sin ruta');
+      const resultado: RutaTrazada = {
+        km: Math.round((ruta.distance / 1000) * 100) / 100,
+        minutos: Math.max(1, Math.round((ruta.duration * 1.25) / 60)),
+        puntos: linea.map(([lon, lat]) => ({ lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5 })),
+        exacta: true,
+      };
+      this.cacheTrazo.guardar(clave, resultado);
+      return resultado;
+    } catch (e) {
+      log.warn(`OSRM no trazó la ruta (${e instanceof Error ? e.message : String(e)}); se dibuja en línea recta`);
+      let recta = 0;
+      for (let i = 1; i < puntos.length; i++) recta += haversineKm(puntos[i - 1], puntos[i]);
+      return { km: Math.round(recta * FACTOR_RUTA * 100) / 100, minutos: minutosEstimados(recta), puntos, exacta: false };
     }
   }
 

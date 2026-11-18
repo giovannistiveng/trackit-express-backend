@@ -145,6 +145,10 @@ export function crearRutasApi(c: Contenedor): Router {
   r.get('/geo/inversa', auth, rateLimit(30, 60_000), async (req: Request, res: Response) => {
     res.json({ resultado: await c.catalogo.direccionDe.execute(req.query.lat, req.query.lon) });
   });
+  // Sin sesión: también la usa el enlace público de seguimiento
+  r.get('/geo/ruta', rateLimit(40, 60_000), async (req: Request, res: Response) => {
+    res.json(await c.catalogo.ruta.execute(req.query.puntos));
+  });
   r.post('/cotizar/cotizar', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
     const cotizacion = await c.catalogo.cotizar.execute(req.body ?? {});
     res.json({ message: 'Tarifa calculada exitosamente', ...cotizacion });
@@ -186,8 +190,12 @@ export function crearRutasApi(c: Contenedor): Router {
     const envio = await c.envios.iniciarRuta.execute(actorDe(req), req.params.id);
     res.json({ message: 'Ruta iniciada', envio });
   });
+  r.post('/envios/:id/llegada-recogida', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
+    res.json({ message: 'Llegada a recoger registrada', envio: await c.envios.llegadaRecogida.execute(actorDe(req), req.params.id) });
+  });
   r.post('/envios/:id/recogida', auth, autorizar(CONDUCTOR), subirArchivo(TIPOS_FOTO), async (req: Request, res: Response) => {
-    res.json({ message: 'Paquete recogido, ruta iniciada', envio: await c.envios.recoger.execute(actorDe(req), req.params.id, archivoDe(req)) });
+    const envio = await c.envios.recoger.execute(actorDe(req), req.params.id, archivoDe(req), req.body ?? {});
+    res.json({ message: 'Carga recogida, ruta iniciada', envio });
   });
   r.post('/envios/:id/paradas/:idParada/completar', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
     res.json(await c.envios.completarParada.execute(actorDe(req), req.params.id, req.params.idParada));
@@ -260,6 +268,10 @@ export function crearRutasApi(c: Contenedor): Router {
   // --- Administración ---
   r.get('/conductores/pendientes', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     res.json(await c.conductores.postulantes.execute(actorDe(req)));
+  });
+  r.patch('/admin/documentos/:id', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    const documento = await c.conductores.revisarDocumento.execute(actorDe(req), req.params.id, req.body ?? {});
+    res.json({ message: documento.estado === 'Aprobado' ? 'Documento aprobado' : 'Documento rechazado', documento });
   });
   r.post('/conductores/aprobar', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     const driver = await c.conductores.decidir.execute(actorDe(req), req.body ?? {});
