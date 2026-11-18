@@ -7,7 +7,7 @@ module.exports = {
   setupFiles: ['<rootDir>/tests/helpers/env.ts'],
   collectCoverageFrom: ['src/**/*.ts', '!src/infrastructure/http/server.ts', '!src/infrastructure/database/cli.ts', '!src/**/*.d.ts'],
   coverageReporters: ['text-summary', 'lcov', 'html'],
-  coverageThreshold: { global: { statements: 90, branches: 80, functions: 90, lines: 90 } },
+  coverageThreshold: { global: { statements: 100, branches: 100, functions: 100, lines: 100 } },
   // Las pruebas de integración comparten una base de datos: se ejecutan en serie
   maxWorkers: 1,
   testTimeout: 20000,

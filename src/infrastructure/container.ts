@@ -1,4 +1,4 @@
-import path from 'path';
+import path from 'node:path';
 import { Pool } from 'pg';
 import { config } from '../config';
 import { Logger } from '../shared/logger';
@@ -70,7 +70,6 @@ import {
   GetTrackingUseCase,
   ListAvailableShipmentsUseCase,
   RecordLocationUseCase,
-  StartRouteUseCase,
   UploadEvidenceUseCase,
   ValidateDeliveryUseCase,
 } from '../application/use-cases/shipments/driver-shipments.use-cases';
@@ -147,6 +146,14 @@ export interface Dependencias {
   storage?: StoragePort;
 }
 
+/** Hora actual del servidor (las pruebas inyectan otra). */
+export const horaActual = (): Date => new Date();
+
+/** Manejador que registra como advertencia un fallo que no debe interrumpir la operación. */
+export function avisoDe(log: Logger, contexto: string, mensaje: string): (e: unknown) => void {
+  return (e) => log.child(contexto).warn(mensaje, e);
+}
+
 /** Composición de la aplicación: repositorios, adaptadores y casos de uso. */
 export function crearContenedor(d: Dependencias) {
   const tokens = d.tokens ?? new JWTService();
@@ -166,8 +173,8 @@ export function crearContenedor(d: Dependencias) {
   const vehiculos = new VehicleRepositoryPostgres(d.pool);
   const documentos = new DocumentoConductorRepositoryPostgres(d.pool);
   const ubicaciones = new LocationRepositoryPostgres(d.pool);
-  const audit = new AuditService(new AuditRepositoryPostgres(d.pool), (e) => d.log.child('Auditoria').warn('No se pudo registrar la auditoría', e));
-  const reloj = d.reloj ?? (() => new Date());
+  const audit = new AuditService(new AuditRepositoryPostgres(d.pool), avisoDe(d.log, 'Auditoria', 'No se pudo registrar la auditoría'));
+  const reloj = d.reloj ?? horaActual;
   const bus = new EventBusMemoria();
   const tickets = new TicketsEventos();
   const pushRepo = new PushRepositoryPostgres(d.pool);
@@ -178,9 +185,9 @@ export function crearContenedor(d: Dependencias) {
     [new WebPushSender(claves, config.push.vapidContacto), FcmSender.desdeArchivo(config.push.fcmCuentaServicio)].filter(
       (x): x is WebPushSender | FcmSender => x !== null,
     );
-  const push = new PushService(pushRepo, senders, (e) => d.log.child('Push').warn('No se pudo enviar la notificación push', e));
+  const push = new PushService(pushRepo, senders, avisoDe(d.log, 'Push', 'No se pudo enviar la notificación push'));
   const notificacionesRepo = new NotificationRepositoryPostgres(d.pool);
-  const notificaciones = new NotificationService(notificacionesRepo, (e) => d.log.child('Notificaciones').warn('No se pudo crear la notificación', e), {
+  const notificaciones = new NotificationService(notificacionesRepo, avisoDe(d.log, 'Notificaciones', 'No se pudo crear la notificación'), {
     bus,
     push,
   });
@@ -238,7 +245,6 @@ export function crearContenedor(d: Dependencias) {
       aceptar: new AcceptShipmentUseCase(envios, drivers, vehiculos, audit, notificaciones, publicador, pagosRepo),
       llegadaRecogida: new ArrivePickupUseCase(envios, drivers, notificaciones, reloj),
       recoger: new PickupShipmentUseCase(envios, drivers, storage, audit, notificaciones, reloj),
-      iniciarRuta: new StartRouteUseCase(envios, drivers, audit, notificaciones),
       completarParada: new CompleteStopUseCase(envios, drivers, paradas, notificaciones, reloj),
       llegadaDestino: new ArriveDestinationUseCase(envios, drivers, notificaciones, reloj),
       evidencia: new UploadEvidenceUseCase(envios, drivers, storage),

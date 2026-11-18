@@ -106,7 +106,7 @@ describe('Cotizador', () => {
   ]);
 
   it('sin coordenadas usa la zona elegida a mano y las tarifas por defecto si la tabla falla', async () => {
-    const tarifasRotas = { findAll: async () => Promise.reject(new Error('no existe la tabla')), update: async () => null };
+    const tarifasRotas = { findAll: async () => Promise.reject(new Error('no existe la tabla')), update: async () => MOTO };
     const c = new Cotizador(zonas, tarifasRotas, sinCoords, () => MEDIODIA);
     const r = await c.cotizar({ origen: 'Centro', destino: 'Finca', id_zona: 2, categoria: 'Furgoneta' });
     expect(r.zona.nombre_zona).toBe('Vereda');
@@ -121,7 +121,7 @@ describe('Cotizador', () => {
 
   it('rechaza origen y destino en el mismo punto; usa tarifas por defecto si la tabla está vacía', async () => {
     const mismo: DistancePort = { calcularDistancia: async () => ({ distancia_km: 0.01, duracion_segundos: 10, origen: { lat: 4.3365, lon: -74.3638 }, destino: { lat: 4.3365, lon: -74.3638 }, exacta: true }) };
-    const c = new Cotizador(zonas, { findAll: async () => [], update: async () => null }, mismo);
+    const c = new Cotizador(zonas, { findAll: async () => [], update: async () => MOTO }, mismo);
     await expect(c.cotizar({ origen: 'Aquí', destino: 'Allí' })).rejects.toThrow('mismo lugar');
   });
 });

@@ -70,7 +70,7 @@ La base de datos (`DB_NAME`) debe existir antes de `db:setup` (por ejemplo, cré
 | `npm test`                 | Todas las pruebas                                           |
 | `npm run test:unit`        | Solo unitarias (no necesitan base de datos)                 |
 | `npm run test:integration` | Solo integración (API completa contra PostgreSQL)           |
-| `npm run test:coverage`    | Pruebas con cobertura (`coverage/lcov.info` para SonarQube) |
+| `npm run test:coverage`    | Pruebas con cobertura obligatoria del 100 % (`coverage/lcov.info` para SonarQube) |
 | `npm run db:setup`         | Crea el esquema y carga `seed.sql`                          |
 | `npm run db:migrate`       | Aplica las migraciones pendientes de `database/migrations`  |
 | `npm run db:prepare`       | (compilado) crea o migra según el caso; lo usa Docker       |
@@ -123,7 +123,6 @@ Inicia sesión en `POST /api/auth/login`, copia el token y pulsa **Authorize**.
 | `GET /api/conductores/envios/historial`                                                    | Conductor                                      | Servicios terminados con calificación y comentario                                 |
 | `GET /api/conductores/me/resumen`                                                          | Conductor                                      | Servicios, ganancias (80 % de la tarifa) y reputación                              |
 | `POST /api/envios/aceptar`                                                                 | Conductor aprobado                             | CU-007 (un servicio activo a la vez)                                               |
-| `POST /api/envios/:id/iniciar-ruta`                                                        | Conductor asignado                             | Asignado → En Ruta                                                                 |
 | `POST/GET /api/envios/:id/ubicacion`                                                       | Conductor asignado / dueño                     | CU-008                                                                             |
 | `POST /api/envios/:id/evidencia`                                                           | Conductor asignado                             | Foto de entrega                                                                    |
 | `POST /api/envios/:id/validar-entrega`                                                     | Conductor asignado                             | CU-009                                                                             |
@@ -271,3 +270,4 @@ npm test
 - `main`: producción estable
 - `pre-produccion`: staging
 - `desarrollo`: trabajo diario
+

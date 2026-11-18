@@ -2,7 +2,7 @@ import { Actor } from '../../../domain/entities/actor.entity';
 import { PlataformaPush, PushRepositoryPort } from '../../../domain/ports/platform.ports';
 import { ValidationError } from '../../../shared/errors';
 
-const PLATAFORMAS: PlataformaPush[] = ['web', 'android', 'ios'];
+const PLATAFORMAS = new Set<PlataformaPush>(['web', 'android', 'ios']);
 
 /**
  * Registra el dispositivo del usuario para notificaciones push.
@@ -14,7 +14,7 @@ export class SubscribePushUseCase {
 
   async execute(actor: Actor, input: Record<string, unknown>): Promise<void> {
     const plataforma = (input['plataforma'] ?? 'web') as PlataformaPush;
-    if (!PLATAFORMAS.includes(plataforma)) throw new ValidationError('La plataforma debe ser web, android o ios');
+    if (!PLATAFORMAS.has(plataforma)) throw new ValidationError('La plataforma debe ser web, android o ios');
     if (plataforma === 'web') {
       const endpoint = typeof input['endpoint'] === 'string' ? input['endpoint'] : '';
       const keys = (input['keys'] ?? {}) as { p256dh?: unknown; auth?: unknown };

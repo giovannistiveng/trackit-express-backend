@@ -1,4 +1,4 @@
-import { AddressInfo } from 'net';
+import { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { Express } from 'express';
 import { pool } from '../../src/config/database';

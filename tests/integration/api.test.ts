@@ -45,7 +45,7 @@ describe('Sistema y documentación', () => {
     const spec = await request(app).get('/api/docs.json');
     expect(spec.body.openapi).toBe('3.0.3');
     expect(Object.keys(spec.body.paths)).toEqual(
-      expect.arrayContaining(['/api/conductores/me', '/api/zonas', '/api/clientes/envios', '/api/admin/auditoria', '/api/envios/{id}/iniciar-ruta', '/api/envios/{id}/seguimiento', '/api/envios/{id}/cancelar', '/api/notificaciones', '/api/usuarios/me', '/api/publico/estadisticas', '/api/admin/envios']),
+      expect.arrayContaining(['/api/conductores/me', '/api/zonas', '/api/clientes/envios', '/api/admin/auditoria', '/api/envios/{id}/recogida', '/api/envios/{id}/seguimiento', '/api/envios/{id}/cancelar', '/api/notificaciones', '/api/usuarios/me', '/api/publico/estadisticas', '/api/admin/envios']),
     );
   });
 
@@ -232,16 +232,13 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
       'Inicia la ruta antes de validar la entrega',
     );
 
-    // Iniciar ruta y ubicación (CU-008)
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(otroConductor.token))).status).toBe(403);
-    // Sin la foto de recogida no se inicia la ruta
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(conductor.token))).body.error).toBe(
-      'Toma la foto del paquete al recogerlo para iniciar la ruta',
-    );
+    // Recogida y ubicación (CU-008): solo el conductor asignado, con la foto de la carga
+    expect(
+      (await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(otroConductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' })).status,
+    ).toBe(403);
     expect((await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token))).body.error).toBe('Toma la foto de la carga al recogerla');
     const ruta = await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).field('codigo_recogida', String(envio.codigo_recogida)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
     expect(ruta.body.envio).toMatchObject({ estado: 'En Ruta', url_foto_recogida: expect.stringMatching(/\/uploads\/trackit\/recogidas\//) });
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(conductor.token))).status).toBe(400);
     expect((await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).field('codigo_recogida', String(envio.codigo_recogida)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' })).status).toBe(400);
     const ub = { lat: 4.3369, lon: -74.3638, capturado_en: '2026-10-29T15:00:00.000Z' };
     expect((await request(app).post(`/api/envios/${envio.id_envio}/ubicacion`).set(auth(conductor.token)).send(ub)).status).toBe(201);

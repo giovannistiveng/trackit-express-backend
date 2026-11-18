@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Logger de TrackIt Express.
@@ -17,7 +17,7 @@ export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 const LEVEL_WEIGHT: Record<LogLevel, number> = { DEBUG: 10, INFO: 20, WARN: 30, ERROR: 40 };
 
 /** Campos que se ocultan si el nombre coincide exactamente (sin importar mayúsculas). */
-const SENSITIVE_EXACT = ['pin', 'pin_seguridad', 'pinseguridad', 'apikey', 'api_key', 'authtoken', 'auth_token'];
+const SENSITIVE_EXACT = new Set(['pin', 'pin_seguridad', 'pinseguridad', 'apikey', 'api_key', 'authtoken', 'auth_token']);
 /** Campos que se ocultan si el nombre contiene alguno de estos fragmentos. */
 const SENSITIVE_PARTS = ['password', 'contrasena', 'contraseña', 'token', 'secret', 'authorization'];
 
@@ -56,7 +56,7 @@ export function formatTimestamp(d: Date): string {
 
 function isSensitiveKey(key: string): boolean {
   const k = key.toLowerCase();
-  return SENSITIVE_EXACT.includes(k) || SENSITIVE_PARTS.some((part) => k.includes(part));
+  return SENSITIVE_EXACT.has(k) || SENSITIVE_PARTS.some((part) => k.includes(part));
 }
 
 /** Copia profunda del valor con los campos sensibles ocultos. */
@@ -84,7 +84,7 @@ function serializeMeta(meta: unknown): string {
   if (clean && typeof clean === 'object' && 'stack' in (clean as Record<string, unknown>)) {
     const { stack, ...rest } = clean as Record<string, unknown>;
     const restStr = Object.keys(rest).length ? ` ${JSON.stringify(rest)}` : '';
-    const pila = stack ? '\n' + String(stack) : '';
+    const pila = typeof stack === 'string' && stack ? '\n' + stack : '';
     return restStr + pila;
   }
   try {

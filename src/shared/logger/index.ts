@@ -1,15 +1,15 @@
-import path from 'path';
+import path from 'node:path';
 import { config } from '../../config';
 import { Logger, LogLevel } from './logger';
 
 export { Logger, sanitize, formatDate, formatTimestamp } from './logger';
 export type { LogLevel, LoggerOptions } from './logger';
 
-const VALID_LEVELS: LogLevel[] = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
+const VALID_LEVELS = new Set<LogLevel>(['DEBUG', 'INFO', 'WARN', 'ERROR']);
 
 function resolveLevel(): LogLevel {
   const raw = config.log.level as LogLevel;
-  if (VALID_LEVELS.includes(raw)) return raw;
+  if (VALID_LEVELS.has(raw)) return raw;
   return config.nodeEnv === 'production' ? 'INFO' : 'DEBUG';
 }
 

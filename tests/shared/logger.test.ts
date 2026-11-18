@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Logger, sanitize } from '../../src/shared/logger/logger';
 
 function tmpDir(): string {

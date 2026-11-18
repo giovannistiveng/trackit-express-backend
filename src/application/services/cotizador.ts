@@ -32,6 +32,7 @@ import {
 } from '../../domain/services/tarifas';
 import { NotFoundError, ValidationError } from '../../shared/errors';
 import { coordenadasOpcionales, idValido, textoOpcional, textoValido } from '../validation';
+import { aTexto } from '../../domain/services/texto';
 
 /** Tarifas de respaldo si la tabla Tarifa_Vehiculo aún no existe o está vacía (migración 003 pendiente). */
 export const TARIFAS_POR_DEFECTO: TarifaVehiculo[] = [
@@ -104,7 +105,7 @@ export function paradasValidas(valor: unknown): Parada[] {
 /** Fecha programada válida (entre 30 minutos y 7 días en el futuro) o null. */
 export function fechaProgramadaValida(valor: unknown, ahora: Date): Date | null {
   if (valor === undefined || valor === null || valor === '') return null;
-  const f = new Date(String(valor));
+  const f = new Date(aTexto(valor));
   if (Number.isNaN(f.getTime())) throw new ValidationError('La fecha programada no es válida');
   const minutos = (f.getTime() - ahora.getTime()) / 60_000;
   if (minutos < PROGRAMAR_MINIMO_MIN) {
@@ -120,7 +121,7 @@ export const MENSAJE_CATEGORIA = `Categoría inválida. Debe ser: ${CATEGORIAS_V
 
 export function categoriaOpcional(valor: unknown): VehicleCategory | null {
   if (valor === undefined || valor === null || valor === '') return null;
-  if (!(CATEGORIAS_VEHICULO as readonly string[]).includes(String(valor))) throw new ValidationError(MENSAJE_CATEGORIA);
+  if (!(CATEGORIAS_VEHICULO as readonly string[]).includes(aTexto(valor))) throw new ValidationError(MENSAJE_CATEGORIA);
   return valor as VehicleCategory;
 }
 

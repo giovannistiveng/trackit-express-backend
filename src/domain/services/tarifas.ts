@@ -121,9 +121,11 @@ export function calcularTarifaDetallada({
 
 /** Zona activa más pequeña que contiene el punto, o null si está fuera de cobertura. */
 export function zonaDelPunto(zonas: ZonaTarifa[], punto: Coordenadas): ZonaTarifa | null {
+  // Una zona sin radio no cubre nada (ni siquiera su propio centro)
   const candidatas = zonas.filter(
-    (z) => z.activa !== false && z.centro && haversineKm(z.centro, punto) <= (z.radio_km ?? 0),
+    (z): z is ZonaTarifa & { centro: Coordenadas; radio_km: number } =>
+      z.activa !== false && !!z.centro && !!z.radio_km && haversineKm(z.centro, punto) <= z.radio_km,
   );
-  candidatas.sort((a, b) => (a.radio_km ?? 0) - (b.radio_km ?? 0));
+  candidatas.sort((a, b) => a.radio_km - b.radio_km);
   return candidatas[0] ?? null;
 }

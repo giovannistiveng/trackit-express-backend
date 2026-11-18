@@ -1,6 +1,6 @@
-import { readFileSync } from 'fs';
-import os from 'os';
-import path from 'path';
+import { readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Pool } from 'pg';
 import request from 'supertest';
 import { pool } from '../../src/config/database';

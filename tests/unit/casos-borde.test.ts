@@ -1,6 +1,6 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from 'fs';
-import os from 'os';
-import path from 'path';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   GenerateSettlementsUseCase,
   GetShipmentPaymentUseCase,
@@ -148,7 +148,7 @@ function liquidacionesFalsas(generadas: Liquidacion[], una?: Liquidacion): jest.
   return {
     generar: jest.fn(async () => generadas),
     list: jest.fn(async () => ({ items: generadas, total: generadas.length })),
-    findById: jest.fn(async (id: number) => (una && id === una.id_liquidacion ? una : null)),
+    findById: jest.fn(async (id: number) => (una?.id_liquidacion === id ? una : null)),
     marcarPagada: jest.fn(async (id: number, referencia: string, ahora: Date) =>
       una ? { ...una, estado: 'pagada' as const, referencia, pagada_en: ahora } : null,
     ),
@@ -215,7 +215,7 @@ describe('Utilidades de validación y SQL', () => {
   });
 
   it('patronBusqueda escapa los comodines de LIKE', () => {
-    expect(patronBusqueda('50%_x\\')).toBe('%50\\%\\_x\\\\%');
+    expect(patronBusqueda('50%_x\\')).toBe(String.raw`%50\%\_x\\%`);
   });
 });
 

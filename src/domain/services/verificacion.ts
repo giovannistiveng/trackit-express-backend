@@ -1,4 +1,5 @@
 import { DocumentoConductor, TipoDocumento } from '../entities/documento-conductor.entity';
+import { aTexto } from './texto';
 
 /**
  * Verificación de conductores: qué documentos se exigen, cuáles vencen y dónde los comprueba
@@ -175,7 +176,7 @@ export function evaluarRequisitos(docs: DocumentoConductor[], tieneVehiculo: boo
 /** Fecha de vencimiento válida (formato AAAA-MM-DD, futura y a menos de 15 años). */
 export function fechaVencimientoValida(valor: unknown, hoy: Date): Date | null {
   if (valor === undefined || valor === null || valor === '') return null;
-  const texto = String(valor);
+  const texto = aTexto(valor);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(texto)) return null;
   const f = new Date(`${texto}T00:00:00Z`);
   if (Number.isNaN(f.getTime())) return null;

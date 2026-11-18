@@ -1,8 +1,8 @@
 import { describe, it, expect } from '@jest/globals';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import http from 'http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
 import express from 'express';
 import { Logger } from '../../src/shared/logger/logger';
 import { requestLogger } from '../../src/infrastructure/http/middlewares/request-logger.middleware';
@@ -47,7 +47,7 @@ describe('requestLogger', () => {
     const errores = fs.readFileSync(path.join(dir, 'errores-2026-10-29.txt'), 'utf8');
 
     expect(id).toMatch(/^[0-9a-f]{8}$/);
-    expect(contenido).toMatch(new RegExp(`\\[WARN \\] POST /api/auth/login → 401 \\(.+ ms\\) id=${id}`));
+    expect(contenido).toMatch(new RegExp(String.raw`\[WARN \] POST /api/auth/login → 401 \(.+ ms\) id=${id}`));
     expect(contenido).toMatch(/\[INFO \] GET \/health → 200/);
     expect(contenido).toContain('"password":"[OCULTO]"');
     expect(contenido).not.toContain('Secreta123');

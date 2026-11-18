@@ -63,7 +63,7 @@ describe('Sitio público', () => {
       descripcion: 'Casco urbano de Fusagasugá',
     });
     const tarifas = await request(app).get('/api/publico/tarifas');
-    expect(tarifas.body.tarifas).toHaveLength(4);
+    expect(tarifas.body.tarifas).toHaveLength(2);
     expect(tarifas.body).toMatchObject({ recargo_nocturno: 0.2, horario_nocturno: '20:00 a 5:59' });
   });
 

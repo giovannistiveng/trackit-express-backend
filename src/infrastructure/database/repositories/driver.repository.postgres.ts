@@ -37,7 +37,7 @@ export class DriverRepositoryPostgres implements DriverRepositoryPort {
     return (await this.findByUserId(id_usuario)) as Conductor;
   }
 
-  async updateApprovalStatus(id_conductor: number, estado: EstadoAprobacion, motivo: string | null = null): Promise<void> {
+  async updateApprovalStatus(id_conductor: number, estado: EstadoAprobacion, motivo: string | null): Promise<void> {
     await this.pool.query('UPDATE Conductor SET estado_aprobacion = $1, motivo_rechazo = $2 WHERE id_conductor = $3', [
       estado,
       motivo,

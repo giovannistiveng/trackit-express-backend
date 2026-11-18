@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import { ZonaTarifa } from '../../../domain/entities/zona-tarifa.entity';
 import { DatosZona, ZonaTarifaRepositoryPort } from '../../../domain/ports/zona-tarifa.repository.port';
 import { ValidationError } from '../../../shared/errors';
-import { NumeroPg, esViolacionUnica } from '../pg-utils';
+import { NumeroPg, esViolacionUnica, filasAfectadas } from '../pg-utils';
 
 interface ZonaRow {
   id_zona: number;
@@ -10,8 +10,8 @@ interface ZonaRow {
   tarifa_base: string | number;
   centro_lat?: NumeroPg;
   centro_lon?: NumeroPg;
-  radio_km?: NumeroPg;
-  activa?: boolean | null;
+  radio_km: string | number;
+  activa: boolean;
   descripcion?: string | null;
 }
 
@@ -24,9 +24,10 @@ const COLUMNAS: Record<keyof DatosZona, string[]> = {
   descripcion: ['descripcion'],
 };
 
+/** Valores de las columnas de un campo (pg guarda undefined como NULL). */
 function valores(campo: keyof DatosZona, z: Partial<DatosZona>): unknown[] {
-  if (campo === 'centro') return [z.centro?.lat ?? null, z.centro?.lon ?? null];
-  return [z[campo] ?? null];
+  if (campo === 'centro') return [z.centro?.lat, z.centro?.lon];
+  return [z[campo]];
 }
 
 export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
@@ -57,11 +58,11 @@ export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
         [
           zona.nombre_zona,
           zona.tarifa_base,
-          zona.centro?.lat ?? null,
-          zona.centro?.lon ?? null,
+          zona.centro?.lat,
+          zona.centro?.lon,
           zona.radio_km ?? 3,
           zona.activa ?? true,
-          zona.descripcion ?? null,
+          zona.descripcion,
         ],
       );
       return this.mapRow(result.rows[0]);
@@ -106,10 +107,10 @@ export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
          WHERE id_zona = $1 AND eliminada = FALSE`,
         [id_zona],
       );
-      return (r.rowCount ?? 0) > 0 ? 'archivada' : null;
+      return filasAfectadas(r) > 0 ? 'archivada' : null;
     }
     const r = await this.pool.query('DELETE FROM Zona_Tarifa WHERE id_zona = $1', [id_zona]);
-    return (r.rowCount ?? 0) > 0 ? 'borrada' : null;
+    return filasAfectadas(r) > 0 ? 'borrada' : null;
   }
 
   private mapRow(row: ZonaRow): ZonaTarifa {
@@ -119,8 +120,8 @@ export class ZonaTarifaRepositoryPostgres implements ZonaTarifaRepositoryPort {
       nombre_zona: row.nombre_zona,
       tarifa_base: Number(row.tarifa_base),
       centro: tieneCentro ? { lat: Number(row.centro_lat), lon: Number(row.centro_lon) } : null,
-      radio_km: row.radio_km === null || row.radio_km === undefined ? 3 : Number(row.radio_km),
-      activa: row.activa ?? true,
+      radio_km: Number(row.radio_km),
+      activa: row.activa,
       descripcion: row.descripcion ?? null,
     };
   }

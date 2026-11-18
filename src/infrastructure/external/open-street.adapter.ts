@@ -11,6 +11,7 @@ import {
 } from '../../domain/ports/services.port';
 import { coordenadasValidas, haversineKm, minutosEstimados } from '../../domain/services/geo';
 import { logger } from '../../shared/logger';
+import { mensajeDe } from '../../domain/services/texto';
 
 const log = logger.child('OpenStreetMap');
 
@@ -51,7 +52,8 @@ export function nombreCorto(r: ResultadoNominatim): string {
   return (partes.length ? partes.join(', ') : r.display_name.split(',').slice(0, 3).join(',')).slice(0, 200);
 }
 
-class CacheTemporal<T> {
+/** Caché en memoria con vencimiento y tamaño máximo (descarta lo más antiguo). */
+export class CacheTemporal<T> {
   private readonly datos = new Map<string, { valor: T; vence: number }>();
   constructor(private readonly max = 500) {}
 
@@ -97,7 +99,7 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
   // ------------------------------------------------------------ Geocodificación
 
   async buscar(texto: string): Promise<SugerenciaDireccion[]> {
-    const q = texto.trim().replace(/\s+/g, ' ');
+    const q = texto.trim().replaceAll(/\s+/g, ' ');
     if (q.length < 3) return [];
     const clave = q.toLowerCase();
     const enCache = this.cacheBusqueda.obtener(clave);
@@ -190,7 +192,7 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
       this.cacheRuta.guardar(clave, resultado);
       return resultado;
     } catch (e) {
-      log.warn(`OSRM no respondió (${e instanceof Error ? e.message : String(e)}); se estima con línea recta`);
+      log.warn(`OSRM no respondió (${mensajeDe(e)}); se estima con línea recta`);
       const km = Math.max(0.3, rectaKm * FACTOR_RUTA);
       return { km, segundos: minutosEstimados(rectaKm) * 60 };
     }
@@ -222,7 +224,7 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
       this.cacheTrazo.guardar(clave, resultado);
       return resultado;
     } catch (e) {
-      log.warn(`OSRM no trazó la ruta (${e instanceof Error ? e.message : String(e)}); se dibuja en línea recta`);
+      log.warn(`OSRM no trazó la ruta (${mensajeDe(e)}); se dibuja en línea recta`);
       let recta = 0;
       for (let i = 1; i < puntos.length; i++) recta += haversineKm(puntos[i - 1], puntos[i]);
       return { km: Math.round(recta * FACTOR_RUTA * 100) / 100, minutos: minutosEstimados(recta), puntos, exacta: false };
@@ -241,13 +243,14 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
       try {
         const r = await this.conTiempo(url, { 'User-Agent': this.userAgent, 'Accept-Language': 'es' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return (await r.json()) as unknown;
+        return (await r.json());
       } catch (e) {
-        log.warn(`Fallo consultando Nominatim (${ruta}): ${e instanceof Error ? e.message : String(e)}`);
+        log.warn(`Fallo consultando Nominatim (${ruta}): ${mensajeDe(e)}`);
         return null;
       }
     });
-    this.cola = turno.catch(() => undefined);
+    // turno nunca se rechaza (los errores se registran y devuelven null)
+    this.cola = turno;
     return turno;
   }
 

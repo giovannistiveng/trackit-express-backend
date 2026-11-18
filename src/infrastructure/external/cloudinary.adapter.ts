@@ -18,8 +18,9 @@ export class CloudinaryStorage implements StoragePort {
       const stream = cloudinary.uploader.upload_stream(
         { folder: carpeta, resource_type: archivo.mimetype === 'application/pdf' ? 'raw' : 'image' },
         (error, result: UploadApiResponse | undefined) => {
-          if (error || !result) reject(error ?? new Error('Error subiendo archivo a Cloudinary'));
-          else resolve(result.secure_url);
+          if (result && !error) resolve(result.secure_url);
+          // Cloudinary entrega un objeto con message, no un Error: se envuelve (Sonar S6671)
+          else reject(new Error(error?.message ?? 'Error subiendo archivo a Cloudinary'));
         },
       );
       stream.end(archivo.buffer);
@@ -29,5 +30,5 @@ export class CloudinaryStorage implements StoragePort {
 
 /** true si las credenciales parecen reales (no los valores de ejemplo de .env.example). */
 export function cloudinaryConfigurado(cfg: CloudinaryConfig): boolean {
-  return [cfg.cloudName, cfg.apiKey, cfg.apiSecret].every((v) => !!v && !/^tu_/.test(v));
+  return [cfg.cloudName, cfg.apiKey, cfg.apiSecret].every((v) => !!v && !v.startsWith("tu_"));
 }

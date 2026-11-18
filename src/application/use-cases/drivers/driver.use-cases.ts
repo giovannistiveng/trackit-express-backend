@@ -27,12 +27,13 @@ import { ESTADOS_ACTIVOS_CONDUCTOR } from '../../../domain/entities/shipment.ent
 import { conductorDelActor, exigirMismoId, exigirRol } from '../../services/access';
 import { idValido } from '../../validation';
 import { MENSAJE_CATEGORIA } from '../../services/cotizador';
+import { aTexto } from '../../../domain/services/texto';
 
 export const TIPOS_ARCHIVO_DOCUMENTO = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const PLACA_RE = /^[A-Z]{3}\d{2}[A-Z0-9]$/;
 
 export function normalizarPlaca(valor: unknown): string {
-  return String(valor ?? '').toUpperCase().replace(/[\s-]+/g, '');
+  return aTexto(valor).toUpperCase().replaceAll(/[\s-]+/g, '');
 }
 
 /** Documento en la respuesta de la API (fechas como texto). */
@@ -75,14 +76,14 @@ export class GetDriverProfileUseCase {
   constructor(
     private readonly drivers: DriverRepositoryPort,
     private readonly vehicles: VehicleRepositoryPort,
-    private readonly documentos?: DocumentoConductorRepositoryPort,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly documentos: DocumentoConductorRepositoryPort,
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor) {
     const c = await conductorDelActor(this.drivers, actor);
     const [v] = await this.vehicles.findByDriverId(c.id_conductor);
-    const docs = this.documentos ? await this.documentos.findByConductor(c.id_conductor) : [];
+    const docs = await this.documentos.findByConductor(c.id_conductor);
     const hoy = this.reloj();
     return {
       id_conductor: c.id_conductor,
@@ -125,7 +126,7 @@ export class UploadDriverDocumentUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly storage: StoragePort,
     private readonly audit: AuditService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor, input: { tipo_documento: unknown; id_conductor?: unknown; fecha_vencimiento?: unknown }, archivo?: ArchivoSubido) {
@@ -156,9 +157,9 @@ export class UploadDriverDocumentUseCase {
 export class ListDriverApplicantsUseCase {
   constructor(
     private readonly drivers: DriverRepositoryPort,
-    private readonly documentos?: DocumentoConductorRepositoryPort,
-    private readonly vehicles?: VehicleRepositoryPort,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly documentos: DocumentoConductorRepositoryPort,
+    private readonly vehicles: VehicleRepositoryPort,
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor) {
@@ -168,8 +169,8 @@ export class ListDriverApplicantsUseCase {
     return Promise.all(
       lista.map(async (c) => {
         const [docs, vehiculos] = await Promise.all([
-          this.documentos ? this.documentos.findByConductor(c.id_conductor) : Promise.resolve([]),
-          this.vehicles ? this.vehicles.findByDriverId(c.id_conductor) : Promise.resolve([]),
+          this.documentos.findByConductor(c.id_conductor),
+          this.vehicles.findByDriverId(c.id_conductor),
         ]);
         const evaluacion = evaluarRequisitos(docs, vehiculos.length > 0, hoy);
         const ultimos = [...ultimoPorTipo(docs).values()];
@@ -220,7 +221,7 @@ export class ReviewDriverDocumentUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor, idCrudo: unknown, input: { aprobado?: unknown; motivo?: unknown; fecha_vencimiento?: unknown }) {
@@ -269,9 +270,9 @@ export class DecideDriverApprovalUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
-    private readonly documentos?: DocumentoConductorRepositoryPort,
-    private readonly vehicles?: VehicleRepositoryPort,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly documentos: DocumentoConductorRepositoryPort,
+    private readonly vehicles: VehicleRepositoryPort,
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor, input: { driverId: unknown; approved: unknown; observation?: unknown }) {
@@ -315,7 +316,6 @@ export class DecideDriverApprovalUseCase {
   }
 
   private async exigirRequisitos(id: number): Promise<void> {
-    if (!this.documentos || !this.vehicles) return;
     const [docs, vehiculos] = await Promise.all([this.documentos.findByConductor(id), this.vehicles.findByDriverId(id)]);
     const ev = evaluarRequisitos(docs, vehiculos.length > 0, this.reloj());
     if (!ev.completo) throw new ValidationError(`Aún no se puede aprobar: ${ev.pendientes.join('; ')}`);
@@ -332,7 +332,7 @@ export class CheckDocumentExpiryUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(): Promise<{ suspendidos: number; avisados: number }> {
@@ -413,7 +413,7 @@ export class ListDriverHistoryUseCase {
 
   async execute(actor: Actor, limiteCrudo?: unknown): Promise<EnvioApi[]> {
     const c = await conductorDelActor(this.drivers, actor);
-    const limite = Math.min(200, Math.max(1, Number.parseInt(String(limiteCrudo ?? '50'), 10) || 50));
+    const limite = Math.min(200, Math.max(1, Number.parseInt(aTexto(limiteCrudo), 10) || 50));
     const lista = await this.envios.findDriverHistory(c.id_conductor, limite);
     return lista.map((e) => presentarEnvio(e, { incluirPin: false, vistaConductor: true }));
   }

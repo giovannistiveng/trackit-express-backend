@@ -31,7 +31,7 @@ export const pool = new Pool({
 // "options": ahí la zona se fija con SET al abrir cada conexión.
 if (config.db.url) {
   pool.on('connect', (cliente) => {
-    cliente.query(`SET TIME ZONE '${ZONA_HORARIA.replace(/'/g, '')}'`).catch((e: unknown) => log.warn('No se pudo fijar la zona horaria de la sesión', e));
+    cliente.query(`SET TIME ZONE '${ZONA_HORARIA.replaceAll('\'', '')}'`).catch((e: unknown) => log.warn('No se pudo fijar la zona horaria de la sesión', e));
   });
 }
 

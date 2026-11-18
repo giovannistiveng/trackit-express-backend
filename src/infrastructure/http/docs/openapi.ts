@@ -9,7 +9,7 @@ const E400 = (ejemplo = 'Error de validación') => error('Datos inválidos o reg
 const E401 = error('Falta el token o es inválido', 'Token inválido o vencido');
 const E403 = error('El rol o el usuario no tiene permiso', 'No tienes permiso para realizar esta acción');
 const E404 = (ejemplo = 'Recurso no encontrado') => error('No existe', ejemplo);
-const json = (schema: object, example?: unknown) => ({ 'application/json': { schema, ...(example !== undefined ? { example } : {}) } });
+const json = (schema: object, example?: unknown) => ({ 'application/json': { schema, ...(example === undefined ? {} : { example }) } });
 const ref = (nombre: string) => ({ $ref: `#/components/schemas/${nombre}` });
 const seguro = [{ bearerAuth: [] }];
 const idEnvio = { name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1 }, description: 'id_envio' };
@@ -540,9 +540,6 @@ export const openApiSpec = {
         requestBody: { required: true, content: json({ type: 'object', required: ['id_envio'], properties: { id_envio: { type: 'integer' } } }, { id_envio: 12 }) },
         responses: { '200': { description: 'Asignado', content: json({ type: 'object', properties: { envio: ref('Envio') } }) }, '400': E400('Este envío ya fue tomado por otro conductor'), '401': E401, '403': E403, '404': E404() },
       },
-    },
-    '/api/envios/{id}/iniciar-ruta': {
-      post: { tags: ['Envíos (conductor)'], summary: 'Iniciar ruta: Asignado → En Ruta · Conductor asignado (requiere la foto de recogida; normalmente se usa /recogida)', security: seguro, parameters: [idEnvio], responses: { '200': { description: 'En Ruta' }, '400': E400(), '401': E401, '403': E403, '404': E404() } },
     },
     '/api/envios/{id}/evidencia': {
       post: {

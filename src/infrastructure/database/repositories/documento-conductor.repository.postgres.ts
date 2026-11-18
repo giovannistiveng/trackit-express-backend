@@ -10,16 +10,14 @@ interface DocumentoRow {
   fecha_subida: Date;
   estado: EstadoDocumento;
   motivo_rechazo: string | null;
-  fecha_vencimiento: Date | string | null;
+  fecha_vencimiento: Date | null;
   revisado_en: Date | null;
   aviso_vencimiento_en: Date | null;
 }
 
-/** Una columna DATE llega como texto AAAA-MM-DD (o Date): se guarda como medianoche UTC. */
-function fecha(valor: Date | string | null): Date | null {
-  if (!valor) return null;
-  if (valor instanceof Date) return new Date(Date.UTC(valor.getFullYear(), valor.getMonth(), valor.getDate()));
-  return new Date(`${valor.slice(0, 10)}T00:00:00Z`);
+/** pg entrega una columna DATE como medianoche local: se pasa a medianoche UTC del mismo día. */
+function fecha(valor: Date | null): Date | null {
+  return valor ? new Date(Date.UTC(valor.getFullYear(), valor.getMonth(), valor.getDate())) : null;
 }
 
 const aTextoFecha = (f: Date | null | undefined) => (f ? f.toISOString().slice(0, 10) : null);
@@ -80,7 +78,7 @@ export class DocumentoConductorRepositoryPostgres implements DocumentoConductorR
       url_archivo: row.url_archivo,
       id_conductor: row.id_conductor,
       fecha_subida: row.fecha_subida,
-      estado: row.estado ?? 'Pendiente',
+      estado: row.estado,
       motivo_rechazo: row.motivo_rechazo ?? null,
       fecha_vencimiento: fecha(row.fecha_vencimiento),
       revisado_en: row.revisado_en ?? null,

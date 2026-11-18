@@ -286,12 +286,13 @@ describe('casos de uso de verificación', () => {
 
   it('control diario: suspende si algo venció y avisa una sola vez si vence pronto', async () => {
     const m = montar();
-    m.drivers.conductores.push({ id_conductor: 2, id_usuario: 21, nombre: 'Ana', correo: 'a2@t.co', estado_aprobacion: 'Aprobado' });
-    m.drivers.conductores.push({ id_conductor: 3, id_usuario: 30, nombre: 'Leo', correo: 'a3@t.co', estado_aprobacion: 'Rechazado' });
-    m.documentos.docs.push(doc('SOAT', { id: 1, id_conductor: 1, fecha_vencimiento: enDias(-1) }));
-    m.documentos.docs.push(doc('Licencia', { id: 2, id_conductor: 2, fecha_vencimiento: enDias(10) }));
-    m.documentos.docs.push(doc('SOAT', { id: 3, id_conductor: 2, fecha_vencimiento: enDias(200) }));
-    m.documentos.docs.push(doc('SOAT', { id: 4, id_conductor: 3, fecha_vencimiento: enDias(-30) }));
+    m.drivers.conductores.push({ id_conductor: 2, id_usuario: 21, nombre: 'Ana', correo: 'a2@t.co', estado_aprobacion: 'Aprobado' }, { id_conductor: 3, id_usuario: 30, nombre: 'Leo', correo: 'a3@t.co', estado_aprobacion: 'Rechazado' });
+    m.documentos.docs.push(
+      doc('SOAT', { id: 1, id_conductor: 1, fecha_vencimiento: enDias(-1) }),
+      doc('Licencia', { id: 2, id_conductor: 2, fecha_vencimiento: enDias(10) }),
+      doc('SOAT', { id: 3, id_conductor: 2, fecha_vencimiento: enDias(200) }),
+      doc('SOAT', { id: 4, id_conductor: 3, fecha_vencimiento: enDias(-30) }),
+    );
     const uc = new CheckDocumentExpiryUseCase(m.documentos, m.drivers, m.audit, m.notif.servicio, () => HOY);
     expect(await uc.execute()).toEqual({ suspendidos: 1, avisados: 1 });
     expect(m.drivers.conductores[0]).toMatchObject({ estado_aprobacion: 'Suspendido', motivo_rechazo: 'Documento vencido: SOAT' });

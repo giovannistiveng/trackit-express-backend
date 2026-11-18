@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import { Actor } from '../../domain/entities/actor.entity';
 
 /** Vigencia de un ticket para abrir el canal de eventos. */

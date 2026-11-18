@@ -6,7 +6,7 @@ export interface DriverRepositoryPort {
   findByUserId(id_usuario: number): Promise<Conductor | null>;
   /** Crea el perfil de conductor (estado Pendiente) si no existe y lo devuelve. */
   ensureForUser(id_usuario: number): Promise<Conductor>;
-  updateApprovalStatus(id_conductor: number, estado: EstadoAprobacion, motivo?: string | null): Promise<void>;
+  updateApprovalStatus(id_conductor: number, estado: EstadoAprobacion, motivo: string | null): Promise<void>;
   /** Conductores por revisar: Pendiente, Rechazado o Suspendido, o con algún documento en revisión. */
   listApplicants(): Promise<Conductor[]>;
   averageRating(id_conductor: number): Promise<number | null>;

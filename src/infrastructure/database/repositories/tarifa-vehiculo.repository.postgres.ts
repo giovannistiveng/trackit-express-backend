@@ -21,7 +21,7 @@ export class TarifaVehiculoRepositoryPostgres implements TarifaVehiculoRepositor
       .sort((a, b) => CATEGORIAS_VEHICULO.indexOf(a.categoria) - CATEGORIAS_VEHICULO.indexOf(b.categoria));
   }
 
-  async update(categoria: VehicleCategory, t: Omit<TarifaVehiculo, 'categoria'>): Promise<TarifaVehiculo | null> {
+  async update(categoria: VehicleCategory, t: Omit<TarifaVehiculo, 'categoria'>): Promise<TarifaVehiculo> {
     const result = await this.pool.query<TarifaRow>(
       `INSERT INTO Tarifa_Vehiculo (categoria, banderazo, por_km, por_minuto, minimo, actualizado)
        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
@@ -30,7 +30,8 @@ export class TarifaVehiculoRepositoryPostgres implements TarifaVehiculoRepositor
        RETURNING *`,
       [categoria, t.banderazo, t.por_km, t.por_minuto, t.minimo],
     );
-    return result.rows[0] ? this.mapRow(result.rows[0]) : null;
+    // INSERT … ON CONFLICT DO UPDATE … RETURNING siempre devuelve la fila
+    return this.mapRow(result.rows[0]);
   }
 
   private mapRow(r: TarifaRow): TarifaVehiculo {

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { Actor } from '../../../domain/entities/actor.entity';
 import { User } from '../../../domain/entities/user.entity';
 import { MailerPort, TokenRepositoryPort } from '../../../domain/ports/platform.ports';
@@ -34,7 +34,7 @@ export class SendVerificationEmailUseCase {
     private readonly tokens: TokenRepositoryPort,
     private readonly mailer: MailerPort,
     private readonly urlFrontend: string,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor): Promise<{ enviado: boolean }> {
@@ -58,7 +58,7 @@ export class VerifyEmailUseCase {
     private readonly users: UserRepositoryPort,
     private readonly tokens: TokenRepositoryPort,
     private readonly audit: AuditService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(input: { token?: unknown }): Promise<{ correo_verificado: true }> {
@@ -82,7 +82,7 @@ export class RequestPasswordResetUseCase {
     private readonly mailer: MailerPort,
     private readonly urlFrontend: string,
     private readonly audit: AuditService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(input: { correo?: unknown }): Promise<void> {
@@ -105,7 +105,7 @@ export class ResetPasswordUseCase {
     private readonly hasher: PasswordHasherPort,
     private readonly mailer: MailerPort,
     private readonly audit: AuditService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(input: { token?: unknown; nueva?: unknown }): Promise<void> {

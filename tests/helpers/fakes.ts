@@ -305,8 +305,9 @@ export function pasarelaFalsa(estado: 'pendiente' | 'aprobado' | 'rechazado' | '
 /** PagosService con repositorios falsos. */
 export function pagosFalsos(envios: FakeShipments, drivers: FakeDrivers, servicio: NotificationService, pasarela = pasarelaFalsa()) {
   const repo = new FakePagos();
-  const publicador = new PublicadorEnvios(envios, drivers, servicio);
-  return { repo, publicador, pasarela, servicio: new PagosService(repo, pasarela, envios, publicador, servicio) };
+  const reloj = () => new Date();
+  const publicador = new PublicadorEnvios(envios, drivers, servicio, reloj);
+  return { repo, publicador, pasarela, servicio: new PagosService(repo, pasarela, envios, publicador, servicio, reloj) };
 }
 
 export class FakeDocumentos implements DocumentoConductorRepositoryPort {
@@ -327,7 +328,7 @@ export class FakeDocumentos implements DocumentoConductorRepositoryPort {
     if (d) Object.assign(d, { estado: r.estado, motivo_rechazo: r.motivo_rechazo, revisado_en: r.revisado_en, fecha_vencimiento: r.fecha_vencimiento ?? d.fecha_vencimiento });
   }
   async findVigilados() {
-    return this.docs.filter((d) => d.fecha_vencimiento || d.tipo_documento === 'Antecedentes');
+    return this.docs.filter((d) => Boolean(d.fecha_vencimiento) || d.tipo_documento === 'Antecedentes');
   }
   async markWarned(id: number, f: Date) {
     const d = await this.findById(id);

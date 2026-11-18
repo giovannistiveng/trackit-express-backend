@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { ROLES } from '../../../domain/entities/actor.entity';
 import { User } from '../../../domain/entities/user.entity';
 import { UserRepositoryPort } from '../../../domain/ports/user.repository.port';
+import { enTransaccion } from '../pg-utils';
 
 interface UsuarioRow {
   id_usuario: number;
@@ -10,17 +11,15 @@ interface UsuarioRow {
   password_hash: string;
   id_rol: number;
   telefono?: string | null;
-  fecha_registro?: Date;
-  correo_verificado?: boolean;
+  fecha_registro: Date;
+  correo_verificado: boolean;
 }
 
 export class UserRepositoryPostgres implements UserRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
   async create(user: Omit<User, 'id'>): Promise<User> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
+    return enTransaccion(this.pool, async (client) => {
       const result = await client.query<UsuarioRow>(
         `INSERT INTO Usuario (nombre, correo, password_hash, id_rol)
          VALUES ($1, $2, $3, $4)
@@ -32,14 +31,8 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
       if (user.id_rol === ROLES.CONDUCTOR) {
         await client.query(`INSERT INTO Conductor (id_usuario, estado_aprobacion) VALUES ($1, 'Pendiente')`, [row.id_usuario]);
       }
-      await client.query('COMMIT');
       return this.mapRow(row);
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async findByEmail(correo: string): Promise<User | null> {
@@ -76,8 +69,8 @@ export class UserRepositoryPostgres implements UserRepositoryPort {
       password_hash: row.password_hash,
       id_rol: row.id_rol,
       telefono: row.telefono ?? null,
-      fecha_registro: row.fecha_registro ? new Date(row.fecha_registro) : undefined,
-      correo_verificado: row.correo_verificado ?? true,
+      fecha_registro: row.fecha_registro,
+      correo_verificado: row.correo_verificado,
     };
   }
 }

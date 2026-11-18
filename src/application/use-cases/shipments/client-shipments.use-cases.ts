@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import { Actor, ROLES } from '../../../domain/entities/actor.entity';
 import { ESTADOS_ACTIVOS_CLIENTE, ESTADOS_ENVIO, EstadoEnvio } from '../../../domain/entities/shipment.entity';
 import { coordenadasValidas } from '../../../domain/services/geo';
@@ -240,11 +240,11 @@ export class CancelShipmentUseCase {
     const esAdmin = actor.role === ROLES.ADMIN;
     const motivo = esAdmin ? textoValido(motivoCrudo, 'motivo', 3, 255) : textoOpcional(motivoCrudo, 'motivo', 255);
     const envio = await envioExistente(this.envios, id);
-    if (!esAdmin) {
+    if (esAdmin) {
+      exigirEstado(envio, ESTADOS_ACTIVOS_CLIENTE, `El envío ya está ${String(envio.estado).toLowerCase()} y no se puede cancelar`);
+    } else {
       if (envio.id_cliente !== actor.userId) throw new ForbiddenError('Solo puedes cancelar tus propios envíos');
       exigirEstado(envio, ['Pendiente'], 'Solo puedes cancelar un envío mientras ningún conductor lo ha tomado');
-    } else {
-      exigirEstado(envio, ESTADOS_ACTIVOS_CLIENTE, `El envío ya está ${String(envio.estado).toLowerCase()} y no se puede cancelar`);
     }
 
     await this.envios.cancel(envio.id_envio as number, motivo);
@@ -253,7 +253,8 @@ export class CancelShipmentUseCase {
       accion: 'Envío cancelado',
       entidad: 'Envío',
       idEntidad: envio.id_envio,
-      detalle: motivo ?? (esAdmin ? 'Por administración' : 'Por el cliente'),
+      // El motivo es obligatorio para el administrador: solo el cliente cancela sin escribirlo
+      detalle: motivo ?? 'Por el cliente',
     });
 
     const devolucion = TEXTO_DEVOLUCION[pago?.estado ?? ''] ?? '';

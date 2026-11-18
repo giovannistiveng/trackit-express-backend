@@ -59,6 +59,7 @@
     "@types/web-push": "3.6.4",
     "eslint": "^9.39.5",
     "eslint-plugin-sonarjs": "^3.0.7",
+    "eslint-plugin-unicorn": "^64.0.0",
     "globals": "^17.14.0",
     "jest": "^29.7.0",
     "sonarqube-scanner": "^5.0.2",

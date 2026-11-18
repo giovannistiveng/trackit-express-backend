@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import jwt from 'jsonwebtoken';
 import webpush from 'web-push';
 import { MensajePush, PlataformaPush, PushSenderPort, SuscripcionPush } from '../../domain/ports/platform.ports';

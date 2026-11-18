@@ -1,4 +1,5 @@
 import { CATEGORIAS_VEHICULO, VehicleCategory } from '../entities/vehicle.entity';
+import { aTexto } from './texto';
 
 /**
  * Tipos de servicio de TrackIt. Cada uno pide datos distintos al crear el pedido y puede sumar
@@ -79,11 +80,11 @@ export interface Extra {
 export class DetalleInvalido extends Error {}
 
 const texto = (v: unknown, campo: string, max: number, obligatorio = false): string | undefined => {
-  if (v === undefined || v === null || String(v).trim() === '') {
+  const t = aTexto(v).trim();
+  if (t === '') {
     if (obligatorio) throw new DetalleInvalido(`Completa el campo "${campo}"`);
     return undefined;
   }
-  const t = String(v).trim();
   if (t.length > max) throw new DetalleInvalido(`"${campo}" admite máximo ${max} caracteres`);
   return t;
 };
@@ -131,7 +132,7 @@ export function detalleValido(tipo: TipoServicio, crudo: unknown): DetalleServic
     d.acceso_destapado = booleano(v['acceso_destapado']) ?? false;
     if (d.peso_kg === undefined) throw new DetalleInvalido('Indica el peso aproximado de la carga');
   }
-  return Object.fromEntries(Object.entries(d).filter(([, x]) => x !== undefined)) as DetalleServicio;
+  return Object.fromEntries(Object.entries(d).filter(([, x]) => x !== undefined));
 }
 
 const ORDEN = (c: VehicleCategory) => CATEGORIAS_VEHICULO.indexOf(c);

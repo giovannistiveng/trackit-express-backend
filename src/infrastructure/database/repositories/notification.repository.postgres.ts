@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { Notificacion, TipoNotificacion } from '../../../domain/entities/notificacion.entity';
 import { NotificationRepositoryPort } from '../../../domain/ports/notification.repository.port';
+import { filasAfectadas } from '../pg-utils';
 
 interface NotificacionRow {
   id_notificacion: number;
@@ -55,21 +56,21 @@ export class NotificationRepositoryPostgres implements NotificationRepositoryPor
       id_notificacion,
       id_usuario,
     ]);
-    return (r.rowCount ?? 0) > 0;
+    return filasAfectadas(r) > 0;
   }
 
   async markAllRead(id_usuario: number): Promise<number> {
     const r = await this.pool.query('UPDATE Notificacion SET leida = TRUE WHERE id_usuario = $1 AND leida = FALSE', [id_usuario]);
-    return r.rowCount ?? 0;
+    return filasAfectadas(r);
   }
 
   async delete(id_notificacion: number, id_usuario: number): Promise<boolean> {
     const r = await this.pool.query('DELETE FROM Notificacion WHERE id_notificacion = $1 AND id_usuario = $2', [id_notificacion, id_usuario]);
-    return (r.rowCount ?? 0) > 0;
+    return filasAfectadas(r) > 0;
   }
 
   async deleteRead(id_usuario: number): Promise<number> {
     const r = await this.pool.query('DELETE FROM Notificacion WHERE id_usuario = $1 AND leida = TRUE', [id_usuario]);
-    return r.rowCount ?? 0;
+    return filasAfectadas(r);
   }
 }

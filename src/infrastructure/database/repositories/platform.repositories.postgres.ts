@@ -14,8 +14,10 @@ import {
   TipoToken,
   TokenRepositoryPort,
 } from '../../../domain/ports/platform.ports';
+import { enTransaccion, filasAfectadas } from '../pg-utils';
 
-const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
+/** Montos (DECIMAL NOT NULL): pg los entrega como texto. */
+const num = (v: string | number) => Number(v);
 const fecha = (v: unknown) => (v ? new Date(v as string) : null);
 
 // ---------------------------------------------------------------- Tokens de cuenta
@@ -24,22 +26,14 @@ export class TokenRepositoryPostgres implements TokenRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
   async create(id_usuario: number, tipo: TipoToken, token_hash: string, expira: Date): Promise<void> {
-    const c = await this.pool.connect();
-    try {
-      await c.query('BEGIN');
+    return enTransaccion(this.pool, async (c) => {
       // Un enlace nuevo invalida los anteriores del mismo tipo
       await c.query('UPDATE Token_Usuario SET usado_en = CURRENT_TIMESTAMP WHERE id_usuario = $1 AND tipo = $2 AND usado_en IS NULL', [
         id_usuario,
         tipo,
       ]);
       await c.query('INSERT INTO Token_Usuario (id_usuario, tipo, token_hash, expira) VALUES ($1, $2, $3, $4)', [id_usuario, tipo, token_hash, expira]);
-      await c.query('COMMIT');
-    } catch (e) {
-      await c.query('ROLLBACK');
-      throw e;
-    } finally {
-      c.release();
-    }
+    });
   }
 
   async consume(tipo: TipoToken, token_hash: string, ahora: Date): Promise<number | null> {
@@ -158,8 +152,8 @@ interface LiquidacionRow {
   id_liquidacion: number;
   id_conductor: number;
   conductor_nombre?: string;
-  desde: Date | string;
-  hasta: Date | string;
+  desde: Date;
+  hasta: Date;
   servicios: number;
   total_tarifas: string;
   ganancia_conductor: string;
@@ -172,9 +166,8 @@ interface LiquidacionRow {
   pagada_en: Date | null;
 }
 
-/** DATE de Postgres → "AAAA-MM-DD" sin desfase de zona horaria. */
-function dia(v: Date | string): string {
-  if (typeof v === 'string') return v.slice(0, 10);
+/** DATE de Postgres (medianoche local) → "AAAA-MM-DD" sin desfase de zona horaria. */
+function dia(v: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}`;
 }
@@ -217,10 +210,8 @@ export class LiquidacionRepositoryPostgres implements LiquidacionRepositoryPort 
   constructor(private readonly pool: Pool) {}
 
   async generar(desde: string, hasta: string): Promise<Liquidacion[]> {
-    const c = await this.pool.connect();
     const comision = COMISION_PLATAFORMA;
-    try {
-      await c.query('BEGIN');
+    return enTransaccion(this.pool, async (c) => {
       // Evita que dos procesos generen a la vez (el trabajo programado y el botón del administrador)
       await c.query('SELECT pg_advisory_xact_lock(724001)');
       // Entregas hasta el final del día "hasta" en hora de Colombia. Las columnas TIMESTAMP guardan
@@ -253,14 +244,8 @@ export class LiquidacionRepositoryPostgres implements LiquidacionRepositoryPort 
         await c.query('UPDATE Pago SET id_liquidacion = $1 WHERE id_envio = ANY($2::int[])', [r.rows[0].id_liquidacion, lista.map((e) => e.id_envio)]);
         creadas.push(mapLiquidacion(r.rows[0]));
       }
-      await c.query('COMMIT');
       return creadas;
-    } catch (e) {
-      await c.query('ROLLBACK');
-      throw e;
-    } finally {
-      c.release();
-    }
+    });
   }
 
   async list(f: { estado?: 'pendiente' | 'pagada'; id_conductor?: number; pagina: number; tamano: number }) {
@@ -283,7 +268,7 @@ export class LiquidacionRepositoryPostgres implements LiquidacionRepositoryPort 
       `UPDATE Liquidacion SET estado = 'pagada', referencia = $2, pagada_en = $3 WHERE id_liquidacion = $1 AND estado = 'pendiente'`,
       [id, referencia, ahora],
     );
-    return (r.rowCount ?? 0) > 0 ? this.findById(id) : null;
+    return filasAfectadas(r) > 0 ? this.findById(id) : null;
   }
 
   async movimientosPendientes(id_conductor: number): Promise<MovimientoConductor[]> {
@@ -364,7 +349,7 @@ export class ParadaRepositoryPostgres implements ParadaRepositoryPort {
       id_parada,
       ahora,
     ]);
-    return (r.rowCount ?? 0) > 0;
+    return filasAfectadas(r) > 0;
   }
 }
 
@@ -392,7 +377,7 @@ export class ChatRepositoryPostgres implements ChatRepositoryPort {
 
   async markRead(id_envio: number, id_lector: number): Promise<number> {
     const r = await this.pool.query('UPDATE Mensaje_Chat SET leido = TRUE WHERE id_envio = $1 AND id_usuario <> $2 AND leido = FALSE', [id_envio, id_lector]);
-    return r.rowCount ?? 0;
+    return filasAfectadas(r);
   }
 
   async countUnread(id_envio: number, id_lector: number): Promise<number> {
