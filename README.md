@@ -79,7 +79,8 @@ La base de datos (`DB_NAME`) debe existir antes de `db:setup` (por ejemplo, cré
 
 ## Variables de entorno
 
-Ver [.env.example](.env.example). Las principales:
+Ver [.env.example](.env.example). Cómo conseguir cada credencial (Cloudinary, Gmail, VAPID, Firebase, Nequi
+Conecta) paso a paso: [docs/credenciales.md](docs/credenciales.md). Las principales:
 
 | Variable                                                     | Uso                                                                                                         |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
@@ -172,6 +173,7 @@ Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Req
   | Moto Express | 2.000     | 700    | 50         | 4.500  |
   | Motocarro    | 4.000     | 950    | 80         | 8.000  |
   | Camioneta    | 10.000    | 1.600  | 120        | 18.000 |
+  | Camión       | 25.000    | 2.800  | 250        | 45.000 |
 
   Ejemplos en moto: dentro del centro ≈ $4.500; Fusagasugá → Silvania (≈14 km) ≈ $15.000.
   El conductor gana el 80 %; la plataforma, el 20 %.
@@ -196,7 +198,18 @@ Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Req
 - **Programados:** de 30 minutos a 7 días; se publican a los conductores 1 hora antes. Recargo nocturno según la hora programada.
 - **Paradas e ida y vuelta:** hasta 3 paradas ubicadas en el mapa ($1.500 c/u); la distancia suma cada tramo. En ida
   y vuelta el conductor marca la llegada al destino y la entrega (PIN) se valida al regresar al origen.
-- **Recogida:** el conductor debe tomar la foto del paquete al recogerlo; con eso inicia la ruta y el cliente la ve.
+- **Servicios:** mandado, mercado, paquete, trasteo e insumos del campo, cada uno con su detalle (`detalle_servicio`).
+  El vehículo mínimo sale del servicio y del peso (moto 20 kg, motocarro 300, camioneta 1.000, camión 3.500).
+  Trasteo: $25.000 por ayudante (máx. 3) y $4.000 por piso sin ascensor. Vía destapada: +15 %.
+- **Etapas del servicio:** buscando conductor → va a recoger → en el punto de recogida → en camino (→ regresando en
+  ida y vuelta) → en el destino → entregado. El conductor tiene un solo botón por etapa y el cliente ve la misma etapa.
+- **Recogida:** paquetes, trasteos e insumos llevan un código de recogida de 4 dígitos que el cliente le da a quien
+  entrega la carga; sin él el conductor no puede recogerla. El conductor cuenta los bultos (si no coinciden se avisa
+  al cliente) y toma la foto. En mandados y mercados registra el valor de la compra, que se cobra en efectivo al entregar.
+- **Verificación de conductores:** cédula, selfie con la cédula, licencia, SOAT, tarjeta de propiedad, antecedentes y
+  técnico-mecánica (si aplica). El administrador revisa cada documento contra la fuente oficial (RUNT, Policía,
+  Procuraduría, SIMIT) y solo puede aprobar con todo vigente. Cada 6 horas se avisa 15 días antes de un vencimiento y
+  se suspende al conductor con un documento vencido.
 - **Chat:** abierto mientras el envío está Asignado o En Ruta; 500 caracteres por mensaje.
 - **Tiempo real:** los avisos, mensajes y cambios llegan por SSE (`/api/eventos`) y como notificación push al
   navegador (Web Push, PWA) o a la app Android/iOS (Firebase), así funciona igual al empaquetar la app con Capacitor.
