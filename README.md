@@ -60,22 +60,22 @@ La base de datos (`DB_NAME`) debe existir antes de `db:setup` (por ejemplo, cré
 
 ## Scripts
 
-| Script                     | Qué hace                                                    |
-| -------------------------- | ----------------------------------------------------------- |
-| `npm run dev`              | Servidor con recarga automática                             |
-| `npm run build`            | Compila a `dist/`                                           |
-| `npm start`                | Ejecuta la versión compilada (producción)                   |
-| `npm run typecheck`        | Verifica tipos (código y pruebas)                           |
-| `npm run lint`             | ESLint con las reglas de SonarJS (las mismas de SonarQube)  |
-| `npm test`                 | Todas las pruebas                                           |
-| `npm run test:unit`        | Solo unitarias (no necesitan base de datos)                 |
-| `npm run test:integration` | Solo integración (API completa contra PostgreSQL)           |
+| Script                     | Qué hace                                                                          |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| `npm run dev`              | Servidor con recarga automática                                                   |
+| `npm run build`            | Compila a `dist/`                                                                 |
+| `npm start`                | Ejecuta la versión compilada (producción)                                         |
+| `npm run typecheck`        | Verifica tipos (código y pruebas)                                                 |
+| `npm run lint`             | ESLint con las reglas de SonarJS (las mismas de SonarQube)                        |
+| `npm test`                 | Todas las pruebas                                                                 |
+| `npm run test:unit`        | Solo unitarias (no necesitan base de datos)                                       |
+| `npm run test:integration` | Solo integración (API completa contra PostgreSQL)                                 |
 | `npm run test:coverage`    | Pruebas con cobertura obligatoria del 100 % (`coverage/lcov.info` para SonarQube) |
-| `npm run db:setup`         | Crea el esquema y carga `seed.sql`                          |
-| `npm run db:migrate`       | Aplica las migraciones pendientes de `database/migrations`  |
-| `npm run db:prepare`       | (compilado) crea o migra según el caso; lo usa Docker       |
-| `npm run lint:sonar`       | Guarda los hallazgos de ESLint en `reports/` para SonarQube |
-| `npm run sonar`            | Envía el análisis a SonarQube                               |
+| `npm run db:setup`         | Crea el esquema y carga `seed.sql`                                                |
+| `npm run db:migrate`       | Aplica las migraciones pendientes de `database/migrations`                        |
+| `npm run db:prepare`       | (compilado) crea o migra según el caso; lo usa Docker                             |
+| `npm run lint:sonar`       | Guarda los hallazgos de ESLint en `reports/` para SonarQube                       |
+| `npm run sonar`            | Envía el análisis a SonarQube                                                     |
 
 ## Variables de entorno
 
@@ -257,6 +257,22 @@ npm test
    motor que SonarQube aplica a TypeScript. La duplicación de código está en 0 % (jscpd).
    El escáner (`sonarqube-scanner` 5) necesita Node.js 22.12 o superior y descarga el motor de análisis la primera vez.
 
+## Integración continua (GitHub Actions)
+
+El flujo `.github/workflows/ci.yml` corre en cada push y pull request a `main`, `desarrollo` y `pre-produccion`:
+
+- **Lint y tipos:** `npm run typecheck` y `npm run lint` (ESLint + SonarJS + reglas Sonar way).
+- **Pruebas:** `npm run test:coverage` contra un PostgreSQL 16 de servicio; falla si la cobertura baja del 100 %.
+  Los pagos usan `NEQUI_MODO=simulado`.
+- **Build:** `npm run build`. Los reportes (`coverage/lcov.info`, `reports/eslint.json`) quedan como artefacto.
+- **Imagen Docker:** construye el `Dockerfile` (no se publica en ningún registro).
+- **SonarQube (opcional):** si el repositorio tiene la variable `SONAR_HOST_URL` y el secreto `SONAR_TOKEN`
+  (Settings → Secrets and variables → Actions), analiza el código y espera el quality gate. El servidor debe ser
+  accesible desde internet (p. ej. SonarQube Cloud, con la variable `SONAR_ORGANIZATION`); un SonarQube en
+  `localhost` se sigue analizando a mano como se explica arriba.
+
+Dependabot (`.github/dependabot.yml`) abre cada lunes un PR agrupado hacia `desarrollo` con las actualizaciones.
+
 ## Despliegue
 
 - **Con Docker (recomendado):** [`deploy/README.md`](deploy/README.md) — compose completo, plan para una
@@ -270,4 +286,3 @@ npm test
 - `main`: producción estable
 - `pre-produccion`: staging
 - `desarrollo`: trabajo diario
-
