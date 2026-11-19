@@ -17,6 +17,8 @@
     "db:setup": "ts-node --transpile-only src/infrastructure/database/cli.ts setup",
     "db:migrate": "ts-node --transpile-only src/infrastructure/database/cli.ts migrate",
     "db:prepare": "node dist/infrastructure/database/cli.js preparar",
+    "carga:preparar": "npm run build && node --env-file=carga/.env.carga dist/infrastructure/database/cli.js preparar",
+    "carga:servidor": "node --env-file=carga/.env.carga dist/infrastructure/http/server.js",
     "sonar": "sonar-scanner-npm",
     "vapid": "web-push generate-vapid-keys"
   },

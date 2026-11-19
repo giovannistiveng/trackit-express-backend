@@ -90,6 +90,7 @@ Conecta) paso a paso: [docs/credenciales.md](docs/credenciales.md). Las principa
 | `PUBLIC_URL`                                                 | URL pública del backend (enlaces a archivos en disco)                                                       |
 | `CLOUDINARY_*`                                               | Si están vacías, los archivos se guardan en `UPLOADS_DIR` y se sirven en `/uploads`                         |
 | `NOMINATIM_CONTACT`                                          | Correo que OpenStreetMap exige para consultar direcciones (no hace falta API key)                           |
+| `GEO_MODO`                                                   | `osm` (por defecto) o `sin-red`: rutas estimadas sin consultar OpenStreetMap (pruebas de carga y CI)        |
 | `LOG_*`                                                      | Logs en `logs/` (ver abajo)                                                                                 |
 | `FRONTEND_URL`                                               | Base de los enlaces de los correos (verificar, restablecer contraseña)                                      |
 | `SMTP_*`, `MAIL_FROM`                                        | Envío de correos. Vacías: los correos se guardan en `logs/correos/` y el enlace sale en el log              |
@@ -256,6 +257,19 @@ npm test
    Antes de analizar, `npm run lint` debe quedar sin hallazgos: usa las reglas de SonarJS, el mismo
    motor que SonarQube aplica a TypeScript. La duplicación de código está en 0 % (jscpd).
    El escáner (`sonarqube-scanner` 5) necesita Node.js 22.12 o superior y descarga el motor de análisis la primera vez.
+
+## Pruebas de carga y estrés (JMeter)
+
+La carpeta [`carga/`](carga/README.md) trae los planes de Apache JMeter (`carga.jmx` y `estres.jmx`), el entorno
+del backend para medir (`carga/.env.carga.example`) y los scripts que generan el reporte HTML:
+
+```powershell
+npm run carga:preparar      # crea las tablas en la base de carga
+npm run carga:servidor      # backend sin límite de peticiones, mapas sin red y Nequi simulado
+powershell -ExecutionPolicy Bypass -File carga\ejecutar.ps1 -Plan carga   # o -Plan estres
+```
+
+Los escenarios, parámetros y criterios de aceptación están en [`carga/README.md`](carga/README.md).
 
 ## Integración continua (GitHub Actions)
 

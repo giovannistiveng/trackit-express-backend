@@ -62,6 +62,8 @@ export const config = {
     aprobacionSimuladaSeg: Number.parseInt(process.env.NEQUI_SIMULADO_SEGUNDOS || '8', 10),
   },
   /** Contacto que se envía a Nominatim (OpenStreetMap) en el User-Agent, como exige su política de uso. */
+  // osm: OpenStreetMap real; sin-red: rutas estimadas sin consultar servicios externos (carga y CI)
+  geoModo: (process.env.GEO_MODO || 'osm').toLowerCase(),
   nominatimContacto: process.env.NOMINATIM_CONTACT || 'soporte@trackit.com.co',
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',

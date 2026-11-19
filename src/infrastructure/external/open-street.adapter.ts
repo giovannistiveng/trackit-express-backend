@@ -73,9 +73,23 @@ export class CacheTemporal<T> {
   }
 }
 
+/** Distancia y tiempo estimados con la línea recta (cuando OSRM no responde o en modo sin red). */
+function estimarPorRecta(rectaKm: number): { km: number; segundos: number } {
+  return { km: Math.max(0.3, rectaKm * FACTOR_RUTA), segundos: minutosEstimados(rectaKm) * 60 };
+}
+
+/** Trazo que une los puntos en línea recta, con la distancia y el tiempo estimados. */
+function trazoRecto(puntos: Coordenadas[]): RutaTrazada {
+  let recta = 0;
+  for (let i = 1; i < puntos.length; i++) recta += haversineKm(puntos[i - 1], puntos[i]);
+  return { km: Math.round(recta * FACTOR_RUTA * 100) / 100, minutos: minutosEstimados(recta), puntos, exacta: false };
+}
+
 /**
  * OpenStreetMap: Nominatim para buscar direcciones y OSRM para la distancia por carretera.
  * Si un servicio no responde, se estima con línea recta × 1,35 a 30 km/h.
+ * Con GEO_MODO=sin-red no se consulta ningún servicio externo (pruebas de carga y CI): las rutas se
+ * estiman en línea recta y la búsqueda de direcciones no devuelve resultados.
  */
 export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort {
   private readonly userAgent: string;
@@ -92,6 +106,7 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
     private readonly urlOsrm = 'https://router.project-osrm.org',
     private readonly urlNominatim = 'https://nominatim.openstreetmap.org',
     private readonly pausaMs = PAUSA_NOMINATIM_MS,
+    private readonly sinRed = config.geoModo === 'sin-red',
   ) {
     this.userAgent = `TrackIt-Express/2.1 (${contacto})`;
   }
@@ -180,6 +195,7 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
     const enCache = this.cacheRuta.obtener(clave);
     if (enCache) return enCache;
     const rectaKm = haversineKm(a, b);
+    if (this.sinRed) return estimarPorRecta(rectaKm);
     try {
       const url = `${this.urlOsrm}/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false&alternatives=false`;
       const r = await this.conTiempo(url, {});
@@ -193,8 +209,7 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
       return resultado;
     } catch (e) {
       log.warn(`OSRM no respondió (${mensajeDe(e)}); se estima con línea recta`);
-      const km = Math.max(0.3, rectaKm * FACTOR_RUTA);
-      return { km, segundos: minutosEstimados(rectaKm) * 60 };
+      return estimarPorRecta(rectaKm);
     }
   }
 
@@ -203,6 +218,7 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
     const clave = puntos.map((p) => `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join(';');
     const enCache = this.cacheTrazo.obtener(clave);
     if (enCache) return enCache;
+    if (this.sinRed) return trazoRecto(puntos);
     try {
       const coords = puntos.map((p) => `${p.lon},${p.lat}`).join(';');
       const url = `${this.urlOsrm}/route/v1/driving/${coords}?overview=simplified&geometries=geojson&alternatives=false`;
@@ -225,15 +241,14 @@ export class OpenStreetAdapter implements DistancePort, GeocodingPort, RoutePort
       return resultado;
     } catch (e) {
       log.warn(`OSRM no trazó la ruta (${mensajeDe(e)}); se dibuja en línea recta`);
-      let recta = 0;
-      for (let i = 1; i < puntos.length; i++) recta += haversineKm(puntos[i - 1], puntos[i]);
-      return { km: Math.round(recta * FACTOR_RUTA * 100) / 100, minutos: minutosEstimados(recta), puntos, exacta: false };
+      return trazoRecto(puntos);
     }
   }
 
   // ------------------------------------------------------------ HTTP
 
   private async nominatim(ruta: string, params: Record<string, string>): Promise<unknown> {
+    if (this.sinRed) return null;
     const url = `${this.urlNominatim}${ruta}?${new URLSearchParams(params).toString()}`;
     // Serializa las llamadas para respetar el límite de Nominatim
     const turno = this.cola.then(async () => {

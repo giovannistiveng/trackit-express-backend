@@ -47,3 +47,8 @@ reports/
 # Docker: valores reales del despliegue
 deploy/.env
 deploy/secretos/
+
+# Pruebas de carga (JMeter): entorno local y resultados
+carga/.env.carga
+carga/resultados/
+jmeter.log

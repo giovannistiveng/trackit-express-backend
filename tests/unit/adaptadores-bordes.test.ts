@@ -161,6 +161,18 @@ describe('OpenStreetMap', () => {
     await jest.advanceTimersByTimeAsync(20_000);
     expect((await pendiente).exacta).toBe(false);
   });
+
+  it('en modo sin red (GEO_MODO=sin-red) estima todo sin consultar servicios externos', async () => {
+    const http = jest.fn(async () => respuesta(200, {}));
+    const osm = new OpenStreetAdapter('s', http, 'https://osrm', 'https://nom', 0, true);
+    const d = await osm.calcularDistancia('Casa', 'Finca', { origen: A, destino: B });
+    expect(d).toMatchObject({ exacta: true, origen: A, destino: B });
+    expect(d.distancia_km).toBeGreaterThan(0);
+    expect(await osm.trazarRuta([A, B])).toMatchObject({ exacta: false, puntos: [A, B] });
+    expect(await osm.buscar('Silvania')).toEqual([]);
+    expect(await osm.inversa(A)).toBeNull();
+    expect(http).not.toHaveBeenCalled();
+  });
 });
 
 describe('seguridad, eventos y middlewares', () => {

@@ -39,6 +39,7 @@ describe('config', () => {
       publicUrl: 'http://localhost:3000',
       cloudinary: { cloudName: '', apiKey: '', apiSecret: '' },
       log: { dir: 'logs', level: '', retentionDays: 30, toConsole: true },
+      geoModo: 'osm',
     });
     expect(config.db.password).toBe('postgres');
     expect(config.jwt.secret).toBe('default_secret_change_in_production');
@@ -64,6 +65,7 @@ describe('config', () => {
       LOG_DIR: '/var/log/trackit',
       LOG_LEVEL: 'warn',
       LOG_TO_CONSOLE: 'False',
+      GEO_MODO: 'Sin-Red',
     });
     expect(config).toMatchObject({
       port: 8080,
@@ -74,6 +76,7 @@ describe('config', () => {
       publicUrl: 'https://api.trackit.co',
       cloudinary: { cloudName: 'nube', apiKey: 'k', apiSecret: 's' },
       log: { dir: '/var/log/trackit', level: 'WARN', toConsole: false },
+      geoModo: 'sin-red',
     });
   });
 });
