@@ -32,7 +32,7 @@
   "author": "TrackIt Express Team",
   "license": "ISC",
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -47,7 +47,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@types/bcryptjs": "^2.4.6",
+    "@types/bcryptjs": "^3.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/jest": "^29.5.14",
