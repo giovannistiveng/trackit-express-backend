@@ -33,7 +33,8 @@ export function origenPermitido(lista: string[], origen: string | undefined): bo
 export function crearApp({ contenedor, log, salud }: OpcionesApp): Express {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  // Proxies delante de la API (Nginx = 1; Caddy + Nginx = 2): así req.ip es la IP real del usuario
+  app.set('trust proxy', config.trustProxy);
 
   app.use(
     helmet({

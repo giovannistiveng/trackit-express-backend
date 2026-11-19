@@ -1,0 +1,13 @@
+# Caddy: certificado HTTPS automático para DOMINIO y reenvío a la web (Nginx).
+{
+	email {$CORREO_ADMIN}
+}
+
+{$DOMINIO} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy web:80 {
+		# Eventos en tiempo real (SSE): entregar cada mensaje sin esperar
+		flush_interval -1
+	}
+}

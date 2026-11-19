@@ -46,6 +46,7 @@ reports/
 
 # Docker: valores reales del despliegue
 deploy/.env
+deploy/aws/.env
 deploy/secretos/
 
 # Pruebas de carga (JMeter): entorno local y resultados

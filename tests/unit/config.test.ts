@@ -40,6 +40,7 @@ describe('config', () => {
       cloudinary: { cloudName: '', apiKey: '', apiSecret: '' },
       log: { dir: 'logs', level: '', retentionDays: 30, toConsole: true },
       geoModo: 'osm',
+      trustProxy: 1,
     });
     expect(config.db.password).toBe('postgres');
     expect(config.jwt.secret).toBe('default_secret_change_in_production');
@@ -66,6 +67,7 @@ describe('config', () => {
       LOG_LEVEL: 'warn',
       LOG_TO_CONSOLE: 'False',
       GEO_MODO: 'Sin-Red',
+      TRUST_PROXY: '2',
     });
     expect(config).toMatchObject({
       port: 8080,
@@ -77,6 +79,7 @@ describe('config', () => {
       cloudinary: { cloudName: 'nube', apiKey: 'k', apiSecret: 's' },
       log: { dir: '/var/log/trackit', level: 'WARN', toConsole: false },
       geoModo: 'sin-red',
+      trustProxy: 2,
     });
   });
 });

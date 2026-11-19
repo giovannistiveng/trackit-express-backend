@@ -91,6 +91,7 @@ Conecta) paso a paso: [docs/credenciales.md](docs/credenciales.md). Las principa
 | `CLOUDINARY_*`                                               | Si están vacías, los archivos se guardan en `UPLOADS_DIR` y se sirven en `/uploads`                         |
 | `NOMINATIM_CONTACT`                                          | Correo que OpenStreetMap exige para consultar direcciones (no hace falta API key)                           |
 | `GEO_MODO`                                                   | `osm` (por defecto) o `sin-red`: rutas estimadas sin consultar OpenStreetMap (pruebas de carga y CI)        |
+| `TRUST_PROXY`                                                | Proxies delante de la API para conocer la IP real: `1` (Nginx, por defecto) o `2` (Caddy + Nginx)           |
 | `LOG_*`                                                      | Logs en `logs/` (ver abajo)                                                                                 |
 | `FRONTEND_URL`                                               | Base de los enlaces de los correos (verificar, restablecer contraseña)                                      |
 | `SMTP_*`, `MAIL_FROM`                                        | Envío de correos. Vacías: los correos se guardan en `logs/correos/` y el enlace sale en el log              |
