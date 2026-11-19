@@ -6,10 +6,11 @@ import { ShipmentRepositoryPort } from '../../domain/ports/shipment.repository.p
 import { vehiculosQuePuedenLlevar } from '../../domain/services/tarifas';
 import { ValidationError } from '../../shared/errors';
 import { NotificationService } from './notification.service';
+import { mensajeDe } from '../../domain/services/texto';
 
 /** Celular Nequi colombiano: 10 dígitos que empiezan por 3. */
 export function celularNequi(valor: unknown): string {
-  const t = typeof valor === 'string' ? valor.replace(/[\s-]/g, '').replace(/^\+?57/, '') : '';
+  const t = typeof valor === 'string' ? valor.replaceAll(/[\s-]/g, '').replace(/^\+?57/, '') : '';
   if (!/^3\d{9}$/.test(t)) throw new ValidationError('Escribe el celular de Nequi: 10 dígitos que empiezan por 3');
   return t;
 }
@@ -43,7 +44,7 @@ export class PublicadorEnvios {
     private readonly envios: ShipmentRepositoryPort,
     private readonly drivers: DriverRepositoryPort,
     private readonly notificaciones: NotificationService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   /** true si el envío ya debe verse en el tablero. */
@@ -91,7 +92,7 @@ export class PagosService {
     private readonly envios: ShipmentRepositoryPort,
     private readonly publicador: PublicadorEnvios,
     private readonly notificaciones: NotificationService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   /** Crea el pago del envío recién creado. Con Nequi envía el cobro al celular del cliente. */
@@ -119,7 +120,7 @@ export class PagosService {
         metodo: 'nequi',
         estado: 'rechazado',
         telefono,
-        mensaje: err instanceof Error ? err.message.slice(0, 250) : 'Nequi no pudo procesar el cobro',
+        mensaje: mensajeDe(err).slice(0, 250) || 'Nequi no pudo procesar el cobro',
         intentos: (pago.intentos ?? 0) + 1,
       })) as Pago;
     }
@@ -195,7 +196,7 @@ export class PagosService {
     } catch (err) {
       return (await this.pagos.update(pago.id_envio, {
         estado: 'reembolso_pendiente',
-        mensaje: `Reembolso pendiente: ${err instanceof Error ? err.message.slice(0, 200) : 'Nequi no respondió'}`,
+        mensaje: `Reembolso pendiente: ${mensajeDe(err).slice(0, 200) || 'Nequi no respondió'}`,
       })) as Pago;
     }
   }

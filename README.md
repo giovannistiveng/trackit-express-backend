@@ -60,26 +60,27 @@ La base de datos (`DB_NAME`) debe existir antes de `db:setup` (por ejemplo, cré
 
 ## Scripts
 
-| Script                     | Qué hace                                                    |
-| -------------------------- | ----------------------------------------------------------- |
-| `npm run dev`              | Servidor con recarga automática                             |
-| `npm run build`            | Compila a `dist/`                                           |
-| `npm start`                | Ejecuta la versión compilada (producción)                   |
-| `npm run typecheck`        | Verifica tipos (código y pruebas)                           |
-| `npm run lint`             | ESLint con las reglas de SonarJS (las mismas de SonarQube)  |
-| `npm test`                 | Todas las pruebas                                           |
-| `npm run test:unit`        | Solo unitarias (no necesitan base de datos)                 |
-| `npm run test:integration` | Solo integración (API completa contra PostgreSQL)           |
-| `npm run test:coverage`    | Pruebas con cobertura (`coverage/lcov.info` para SonarQube) |
-| `npm run db:setup`         | Crea el esquema y carga `seed.sql`                          |
-| `npm run db:migrate`       | Aplica las migraciones pendientes de `database/migrations`  |
-| `npm run db:prepare`       | (compilado) crea o migra según el caso; lo usa Docker       |
-| `npm run lint:sonar`       | Guarda los hallazgos de ESLint en `reports/` para SonarQube |
-| `npm run sonar`            | Envía el análisis a SonarQube                               |
+| Script                     | Qué hace                                                                          |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| `npm run dev`              | Servidor con recarga automática                                                   |
+| `npm run build`            | Compila a `dist/`                                                                 |
+| `npm start`                | Ejecuta la versión compilada (producción)                                         |
+| `npm run typecheck`        | Verifica tipos (código y pruebas)                                                 |
+| `npm run lint`             | ESLint con las reglas de SonarJS (las mismas de SonarQube)                        |
+| `npm test`                 | Todas las pruebas                                                                 |
+| `npm run test:unit`        | Solo unitarias (no necesitan base de datos)                                       |
+| `npm run test:integration` | Solo integración (API completa contra PostgreSQL)                                 |
+| `npm run test:coverage`    | Pruebas con cobertura obligatoria del 100 % (`coverage/lcov.info` para SonarQube) |
+| `npm run db:setup`         | Crea el esquema y carga `seed.sql`                                                |
+| `npm run db:migrate`       | Aplica las migraciones pendientes de `database/migrations`                        |
+| `npm run db:prepare`       | (compilado) crea o migra según el caso; lo usa Docker                             |
+| `npm run lint:sonar`       | Guarda los hallazgos de ESLint en `reports/` para SonarQube                       |
+| `npm run sonar`            | Envía el análisis a SonarQube                                                     |
 
 ## Variables de entorno
 
-Ver [.env.example](.env.example). Las principales:
+Ver [.env.example](.env.example). Cómo conseguir cada credencial (Cloudinary, Gmail, VAPID, Firebase, Nequi
+Conecta) paso a paso: [docs/credenciales.md](docs/credenciales.md). Las principales:
 
 | Variable                                                     | Uso                                                                                                         |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
@@ -89,6 +90,8 @@ Ver [.env.example](.env.example). Las principales:
 | `PUBLIC_URL`                                                 | URL pública del backend (enlaces a archivos en disco)                                                       |
 | `CLOUDINARY_*`                                               | Si están vacías, los archivos se guardan en `UPLOADS_DIR` y se sirven en `/uploads`                         |
 | `NOMINATIM_CONTACT`                                          | Correo que OpenStreetMap exige para consultar direcciones (no hace falta API key)                           |
+| `GEO_MODO`                                                   | `osm` (por defecto) o `sin-red`: rutas estimadas sin consultar OpenStreetMap (pruebas de carga y CI)        |
+| `TRUST_PROXY`                                                | Proxies delante de la API para conocer la IP real: `1` (Nginx, por defecto) o `2` (Caddy + Nginx)           |
 | `LOG_*`                                                      | Logs en `logs/` (ver abajo)                                                                                 |
 | `FRONTEND_URL`                                               | Base de los enlaces de los correos (verificar, restablecer contraseña)                                      |
 | `SMTP_*`, `MAIL_FROM`                                        | Envío de correos. Vacías: los correos se guardan en `logs/correos/` y el enlace sale en el log              |
@@ -122,7 +125,6 @@ Inicia sesión en `POST /api/auth/login`, copia el token y pulsa **Authorize**.
 | `GET /api/conductores/envios/historial`                                                    | Conductor                                      | Servicios terminados con calificación y comentario                                 |
 | `GET /api/conductores/me/resumen`                                                          | Conductor                                      | Servicios, ganancias (80 % de la tarifa) y reputación                              |
 | `POST /api/envios/aceptar`                                                                 | Conductor aprobado                             | CU-007 (un servicio activo a la vez)                                               |
-| `POST /api/envios/:id/iniciar-ruta`                                                        | Conductor asignado                             | Asignado → En Ruta                                                                 |
 | `POST/GET /api/envios/:id/ubicacion`                                                       | Conductor asignado / dueño                     | CU-008                                                                             |
 | `POST /api/envios/:id/evidencia`                                                           | Conductor asignado                             | Foto de entrega                                                                    |
 | `POST /api/envios/:id/validar-entrega`                                                     | Conductor asignado                             | CU-009                                                                             |
@@ -170,8 +172,7 @@ Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Req
   | Vehículo     | Banderazo | Por km | Por minuto | Mínimo |
   | ------------ | --------- | ------ | ---------- | ------ |
   | Moto Express | 2.000     | 700    | 50         | 4.500  |
-  | Motocarro    | 4.000     | 950    | 80         | 8.000  |
-  | Camioneta    | 10.000    | 1.600  | 120        | 18.000 |
+  | Furgoneta    | 12.000    | 1.800  | 150        | 22.000 |
 
   Ejemplos en moto: dentro del centro ≈ $4.500; Fusagasugá → Silvania (≈14 km) ≈ $15.000.
   El conductor gana el 80 %; la plataforma, el 20 %.
@@ -180,7 +181,7 @@ Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Req
   todas, no hay servicio. Distancia y tiempo por carretera con OSRM; direcciones con Nominatim, limitadas a 80 km de
   Fusagasugá (antes "Vereda Pekín" podía caer en otro país y dar miles de km).
 - **Un servicio activo por conductor.** Un vehículo más grande atiende pedidos de su tamaño o menores
-  (Camioneta ⊃ Motocarro ⊃ Moto Express). Al crear un envío se avisa a los conductores disponibles que pueden llevarlo.
+  (la furgoneta también puede tomar pedidos de moto). Al crear un envío se avisa a los conductores disponibles que pueden llevarlo.
 - **PIN:** solo lo ve el cliente dueño; sin el PIN correcto y la foto no se valida la entrega.
 - **Seguimiento:** la señal está "en vivo" si la última posición tiene menos de 2 minutos. El ETA usa 30 km/h y un factor de 1,3 por las curvas de la vía.
 - **Pagos:**
@@ -196,7 +197,19 @@ Errores: `{ "error": "mensaje", "statusCode": 400 }`. Toda respuesta trae `X-Req
 - **Programados:** de 30 minutos a 7 días; se publican a los conductores 1 hora antes. Recargo nocturno según la hora programada.
 - **Paradas e ida y vuelta:** hasta 3 paradas ubicadas en el mapa ($1.500 c/u); la distancia suma cada tramo. En ida
   y vuelta el conductor marca la llegada al destino y la entrega (PIN) se valida al regresar al origen.
-- **Recogida:** el conductor debe tomar la foto del paquete al recogerlo; con eso inicia la ruta y el cliente la ve.
+- **Servicios:** mandado, mercado, paquete, trasteo e insumos del campo, cada uno con su detalle (`detalle_servicio`).
+  Solo hay dos vehículos: **Moto Express** (mandados, mercados y paquetes hasta 20 kg) y **Furgoneta** (trasteos y
+  carga pesada hasta 1.500 kg). El vehículo mínimo sale del servicio y del peso.
+  Trasteo: $25.000 por ayudante (máx. 3) y $4.000 por piso sin ascensor. Vía destapada: +15 %.
+- **Etapas del servicio:** buscando conductor → va a recoger → en el punto de recogida → en camino (→ regresando en
+  ida y vuelta) → en el destino → entregado. El conductor tiene un solo botón por etapa y el cliente ve la misma etapa.
+- **Recogida:** paquetes, trasteos e insumos llevan un código de recogida de 4 dígitos que el cliente le da a quien
+  entrega la carga; sin él el conductor no puede recogerla. El conductor cuenta los bultos (si no coinciden se avisa
+  al cliente) y toma la foto. En mandados y mercados registra el valor de la compra, que se cobra en efectivo al entregar.
+- **Verificación de conductores:** cédula, selfie con la cédula, licencia, SOAT, tarjeta de propiedad, antecedentes y
+  técnico-mecánica (si aplica). El administrador revisa cada documento contra la fuente oficial (RUNT, Policía,
+  Procuraduría, SIMIT) y solo puede aprobar con todo vigente. Cada 6 horas se avisa 15 días antes de un vencimiento y
+  se suspende al conductor con un documento vencido.
 - **Chat:** abierto mientras el envío está Asignado o En Ruta; 500 caracteres por mensaje.
 - **Tiempo real:** los avisos, mensajes y cambios llegan por SSE (`/api/eventos`) y como notificación push al
   navegador (Web Push, PWA) o a la app Android/iOS (Firebase), así funciona igual al empaquetar la app con Capacitor.
@@ -245,6 +258,35 @@ npm test
    Antes de analizar, `npm run lint` debe quedar sin hallazgos: usa las reglas de SonarJS, el mismo
    motor que SonarQube aplica a TypeScript. La duplicación de código está en 0 % (jscpd).
    El escáner (`sonarqube-scanner` 5) necesita Node.js 22.12 o superior y descarga el motor de análisis la primera vez.
+
+## Pruebas de carga y estrés (JMeter)
+
+La carpeta [`carga/`](carga/README.md) trae los planes de Apache JMeter (`carga.jmx` y `estres.jmx`), el entorno
+del backend para medir (`carga/.env.carga.example`) y los scripts que generan el reporte HTML:
+
+```powershell
+npm run carga:preparar      # crea las tablas en la base de carga
+npm run carga:servidor      # backend sin límite de peticiones, mapas sin red y Nequi simulado
+powershell -ExecutionPolicy Bypass -File carga\ejecutar.ps1 -Plan carga   # o -Plan estres
+```
+
+Los escenarios, parámetros y criterios de aceptación están en [`carga/README.md`](carga/README.md).
+
+## Integración continua (GitHub Actions)
+
+El flujo `.github/workflows/ci.yml` corre en cada push y pull request a `main`, `desarrollo` y `pre-produccion`:
+
+- **Lint y tipos:** `npm run typecheck` y `npm run lint` (ESLint + SonarJS + reglas Sonar way).
+- **Pruebas:** `npm run test:coverage` contra un PostgreSQL 16 de servicio; falla si la cobertura baja del 100 %.
+  Los pagos usan `NEQUI_MODO=simulado`.
+- **Build:** `npm run build`. Los reportes (`coverage/lcov.info`, `reports/eslint.json`) quedan como artefacto.
+- **Imagen Docker:** construye el `Dockerfile` (no se publica en ningún registro).
+- **SonarQube (opcional):** si el repositorio tiene la variable `SONAR_HOST_URL` y el secreto `SONAR_TOKEN`
+  (Settings → Secrets and variables → Actions), analiza el código y espera el quality gate. El servidor debe ser
+  accesible desde internet (p. ej. SonarQube Cloud, con la variable `SONAR_ORGANIZATION`); un SonarQube en
+  `localhost` se sigue analizando a mano como se explica arriba.
+
+Dependabot (`.github/dependabot.yml`) abre cada lunes un PR agrupado hacia `desarrollo` con las actualizaciones.
 
 ## Despliegue
 

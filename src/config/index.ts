@@ -28,6 +28,8 @@ export const config = {
   corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean),
   uploadsDir: process.env.UPLOADS_DIR || 'uploads',
   /** URL del frontend: se usa en los enlaces de los correos y del seguimiento público. */
+  /** Cuántos proxies hay delante de la API (TRUST_PROXY). Nginx solo = 1; Caddy + Nginx = 2. */
+  trustProxy: Number(process.env.TRUST_PROXY || 1),
   frontendUrl: (process.env.FRONTEND_URL || 'http://localhost:4200').replace(/\/$/, ''),
   correo: {
     /** Sin SMTP_HOST los correos se guardan como archivos en logs/correos (modo desarrollo). */
@@ -62,6 +64,8 @@ export const config = {
     aprobacionSimuladaSeg: Number.parseInt(process.env.NEQUI_SIMULADO_SEGUNDOS || '8', 10),
   },
   /** Contacto que se envía a Nominatim (OpenStreetMap) en el User-Agent, como exige su política de uso. */
+  // osm: OpenStreetMap real; sin-red: rutas estimadas sin consultar servicios externos (carga y CI)
+  geoModo: (process.env.GEO_MODO || 'osm').toLowerCase(),
   nominatimContacto: process.env.NOMINATIM_CONTACT || 'soporte@trackit.com.co',
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',

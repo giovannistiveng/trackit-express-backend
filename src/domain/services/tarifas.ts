@@ -3,6 +3,7 @@ import { TarifaVehiculo } from '../entities/tarifa-vehiculo.entity';
 import { CATEGORIAS_VEHICULO, VehicleCategory } from '../entities/vehicle.entity';
 import { ZonaTarifa } from '../entities/zona-tarifa.entity';
 import { haversineKm } from './geo';
+import { Extra } from './servicios';
 
 /** Recargo nocturno (20:00 a 5:59, hora de Colombia). */
 export const RECARGO_NOCTURNO = 0.2;
@@ -12,11 +13,9 @@ export const HORA_FIN_NOCHE = 6;
 export const REDONDEO_COP = 100;
 /** Recargo por cada parada intermedia (el conductor se detiene, entrega o recoge y sigue). */
 export const RECARGO_PARADA = 1500;
-/** Cuando el cliente no elige vehículo se cotiza con el más económico. */
-export const CATEGORIA_POR_DEFECTO: VehicleCategory = 'Moto Express';
 
 /** Capacidad relativa: un vehículo puede llevar pedidos de su categoría o de una menor. */
-export const CAPACIDAD: Record<VehicleCategory, number> = { 'Moto Express': 1, Motocarro: 2, Camioneta: 3 };
+export const CAPACIDAD: Record<VehicleCategory, number> = { 'Moto Express': 1, Furgoneta: 2 };
 
 /** Categorías de pedido que puede atender un conductor con estos vehículos. */
 export function categoriasAtendibles(vehiculos: VehicleCategory[]): VehicleCategory[] {
@@ -54,6 +53,10 @@ export interface DesgloseTarifa {
   paradas: number;
   recargo_paradas: number;
   ida_y_vuelta: boolean;
+  /** Recargos del tipo de servicio (ayudantes, escaleras). */
+  extras: Extra[];
+  /** Vía destapada o finca (porcentaje sobre el viaje). */
+  recargo_acceso: number;
   recargo_nocturno: number;
   /** true si el total subió hasta la tarifa mínima del vehículo. */
   minimo_aplicado: boolean;
@@ -68,6 +71,9 @@ export interface DatosTarifa {
   fecha?: Date;
   paradas?: number;
   idaYVuelta?: boolean;
+  extras?: Extra[];
+  /** Porcentaje (0–1) por acceso difícil, sobre el valor del viaje. */
+  porcentajeAcceso?: number;
 }
 
 const redondear = (v: number) => Math.ceil(v / REDONDEO_COP) * REDONDEO_COP;
@@ -81,6 +87,8 @@ export function calcularTarifaDetallada({
   fecha = new Date(),
   paradas = 0,
   idaYVuelta = false,
+  extras = [],
+  porcentajeAcceso = 0,
 }: DatosTarifa): DesgloseTarifa {
   const banderazo = Math.round(tarifa.banderazo);
   const distancia = Math.round(Math.max(0, distanciaKm) * tarifa.por_km);
@@ -90,7 +98,9 @@ export function calcularTarifaDetallada({
   const recargo_paradas = nParadas * RECARGO_PARADA;
   const base = banderazo + distancia + tiempo;
   const conMinimo = Math.max(base, tarifa.minimo);
-  const subtotal = conMinimo + recargo_zona + recargo_paradas;
+  const recargo_acceso = Math.round(conMinimo * Math.max(0, porcentajeAcceso));
+  const totalExtras = extras.reduce((t, e) => t + Math.round(e.valor), 0);
+  const subtotal = conMinimo + recargo_zona + recargo_paradas + recargo_acceso + totalExtras;
   const recargo_nocturno = esNocturno(fecha) ? Math.round(subtotal * RECARGO_NOCTURNO) : 0;
   return {
     categoria: tarifa.categoria,
@@ -101,6 +111,8 @@ export function calcularTarifaDetallada({
     paradas: nParadas,
     recargo_paradas,
     ida_y_vuelta: idaYVuelta,
+    extras: extras.map((e) => ({ concepto: e.concepto, valor: Math.round(e.valor) })),
+    recargo_acceso,
     recargo_nocturno,
     minimo_aplicado: base < tarifa.minimo,
     total: redondear(subtotal + recargo_nocturno),
@@ -109,9 +121,11 @@ export function calcularTarifaDetallada({
 
 /** Zona activa más pequeña que contiene el punto, o null si está fuera de cobertura. */
 export function zonaDelPunto(zonas: ZonaTarifa[], punto: Coordenadas): ZonaTarifa | null {
+  // Una zona sin radio no cubre nada (ni siquiera su propio centro)
   const candidatas = zonas.filter(
-    (z) => z.activa !== false && z.centro && haversineKm(z.centro, punto) <= (z.radio_km ?? 0),
+    (z): z is ZonaTarifa & { centro: Coordenadas; radio_km: number } =>
+      z.activa !== false && !!z.centro && !!z.radio_km && haversineKm(z.centro, punto) <= z.radio_km,
   );
-  candidatas.sort((a, b) => (a.radio_km ?? 0) - (b.radio_km ?? 0));
+  candidatas.sort((a, b) => a.radio_km - b.radio_km);
   return candidatas[0] ?? null;
 }

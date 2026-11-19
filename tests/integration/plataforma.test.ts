@@ -1,9 +1,9 @@
-import { AddressInfo } from 'net';
+import { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { Express } from 'express';
 import { pool } from '../../src/config/database';
 import { Contenedor } from '../../src/infrastructure/container';
-import { FUSA, SILVANIA, buzon, crearAppPrueba, crearContenedorPrueba, hayBaseDeDatos, nequi, pushEnviados, reiniciarBase, sesion, sesionAdmin } from '../helpers/app';
+import { FUSA, SILVANIA, buzon, crearAppPrueba, crearContenedorPrueba, hayBaseDeDatos, nequi, pushEnviados, reiniciarBase, sesion, sesionAdmin, aprobarConductor } from '../helpers/app';
 
 const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 const PARADA = { direccion: 'Barrio Balmoral, Fusagasugá', coords: { lat: 4.345, lon: -74.37 } };
@@ -44,8 +44,8 @@ async function conductorListo(correo: string, placa: string) {
   const s = await sesion(app, correo, 3, 'Camilo Rojas');
   const admin = await sesionAdmin(app);
   const me = (await request(app).get('/api/conductores/me').set(auth(s.token))).body;
-  await request(app).post('/api/vehicles/register').set(auth(s.token)).send({ placa, categoria: 'Camioneta' });
-  await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: me.id_conductor, approved: true });
+  await request(app).post('/api/vehicles/register').set(auth(s.token)).send({ placa, categoria: 'Furgoneta' });
+  await aprobarConductor(app, s.token, admin.token, me.id_conductor);
   return s;
 }
 
@@ -56,9 +56,9 @@ async function crear(token: string, extra: Record<string, unknown> = {}) {
 const tablero = async (token: string) =>
   ((await request(app).get('/api/conductores/envios/disponibles').set(auth(token))).body.envios as { id_envio: number }[]).map((e) => e.id_envio);
 
-async function entregar(conductor: string, envio: { id_envio: number; pin_seguridad: string }, extra: Record<string, unknown> = {}) {
+async function entregar(conductor: string, envio: { id_envio: number; pin_seguridad: string; codigo_recogida?: string }, extra: Record<string, unknown> = {}) {
   await request(app).post('/api/envios/aceptar').set(auth(conductor)).send({ id_envio: envio.id_envio });
-  await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
+  await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor)).field('codigo_recogida', String(envio.codigo_recogida)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
   const evid = await request(app).post(`/api/envios/${envio.id_envio}/evidencia`).set(auth(conductor)).attach('archivo', JPG, { filename: 'e.jpg', contentType: 'image/jpeg' });
   return request(app)
     .post(`/api/envios/${envio.id_envio}/validar-entrega`)
@@ -303,7 +303,7 @@ describe('Seguimiento público, edición y envíos avanzados', () => {
     await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: envio.id_envio });
     expect((await request(app).patch(`/api/envios/${envio.id_envio}`).set(auth(cliente.token)).send({ notas: 'y' })).status).toBe(400);
     const pub2 = (await request(app).get(`/api/publico/seguimiento/${envio.token_seguimiento}`)).body;
-    expect(pub2.conductor).toEqual({ nombre: 'Camilo', vehiculo: 'Camioneta', placa: 'LNK12A' });
+    expect(pub2.conductor).toEqual({ nombre: 'Camilo', vehiculo: 'Furgoneta', placa: 'LNK12A' });
     expect(pub2.historial.map((h: { estado: string }) => h.estado)).toEqual(['Asignado', 'Pendiente']);
     // El conductor asignado ve a quién entregar
     expect((await request(app).get(`/api/envios/${envio.id_envio}`).set(auth(conductor.token))).body.envio.destinatario_telefono).toBe('3001112233');
@@ -349,7 +349,7 @@ describe('Seguimiento público, edición y envíos avanzados', () => {
     const detalle = (await request(app).get(`/api/envios/${envio.id_envio}`).set(auth(conductor.token))).body.envio;
     const idParada = detalle.paradas[0].id_parada;
     expect((await request(app).post(`/api/envios/${envio.id_envio}/paradas/${idParada}/completar`).set(auth(conductor.token))).status).toBe(400);
-    await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
+    await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).field('codigo_recogida', String(envio.codigo_recogida)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
     const evid = await request(app).post(`/api/envios/${envio.id_envio}/evidencia`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'e.jpg', contentType: 'image/jpeg' });
     const validar = () =>
       request(app)
@@ -368,8 +368,10 @@ describe('Seguimiento público, edición y envíos avanzados', () => {
     expect((await validar()).body.envio.estado).toBe('Entregado');
     const simple = (await crear(cliente.token)).body.envio;
     await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: simple.id_envio });
-    await request(app).post(`/api/envios/${simple.id_envio}/recogida`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
-    expect((await request(app).post(`/api/envios/${simple.id_envio}/llegada-destino`).set(auth(conductor.token))).body.error).toBe('Este envío no es de ida y vuelta');
+    await request(app).post(`/api/envios/${simple.id_envio}/recogida`).set(auth(conductor.token)).field('codigo_recogida', String(simple.codigo_recogida)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
+    // En un envío normal, "llegué" marca la llegada al punto de entrega y avisa al cliente
+    const llegadaSimple = await request(app).post(`/api/envios/${simple.id_envio}/llegada-destino`).set(auth(conductor.token));
+    expect(llegadaSimple.body.envio).toMatchObject({ etapa: 'en_destino', llegada_destino_en: expect.any(String) });
   });
 
   conBd('chat entre cliente y conductor: solo los participantes, mientras el servicio está activo', async () => {

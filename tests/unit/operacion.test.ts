@@ -71,7 +71,7 @@ describe('GetTrackingUseCase', () => {
     const d = new FakeDrivers();
     conductorAprobado(d, 5);
     s.envios.set(1, envio({ estado: 'Asignado', id_conductor: 5, origen_coords: FUSA, destino_coords: SILVANIA }));
-    const trail = [ubicacion(4.30, -74.36, 10 * 60_000, ahora)];
+    const trail = [ubicacion(4.3, -74.36, 10 * 60_000, ahora)];
     const uc = new GetTrackingUseCase(s, d, { save: jest.fn(), findLast: jest.fn(), findTrail: async () => trail }, () => ahora);
     const r = await uc.execute(CLIENTE, 1);
     const hastaOrigen = haversineKm(trail[0], FUSA);

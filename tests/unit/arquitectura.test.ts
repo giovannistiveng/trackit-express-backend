@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync, statSync } from 'fs';
-import { dirname, join, relative, resolve, sep } from 'path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 /**
  * Reglas de la arquitectura hexagonal (las dependencias solo apuntan hacia adentro):
@@ -22,7 +22,7 @@ const PROHIBIDO: Record<string, string[]> = {
 /** Paquetes externos permitidos en las capas internas (nada de Express, pg, Nequi, etc.). */
 const PAQUETES_PERMITIDOS: Record<string, string[]> = {
   domain: [],
-  application: ['crypto'],
+  application: ['node:crypto'],
 };
 
 function archivos(dir: string): string[] {

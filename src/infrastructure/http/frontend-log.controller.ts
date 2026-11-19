@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { Logger, LogLevel } from '../../shared/logger';
 
-const NIVELES: LogLevel[] = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
+const NIVELES = new Set<LogLevel>(['DEBUG', 'INFO', 'WARN', 'ERROR']);
 export const MAX_EVENTOS_POR_LOTE = 50;
 const MAX_MENSAJE = 2000;
 const MAX_META_JSON = 4000;
@@ -19,7 +19,7 @@ export interface EventoFrontend {
 
 function texto(v: unknown, max: number): string | undefined {
   if (typeof v !== 'string') return undefined;
-  const limpio = v.replace(/[\r\n]+/g, ' ').trim();
+  const limpio = v.replaceAll(/[\r\n]+/g, ' ').trim();
   return limpio ? limpio.slice(0, max) : undefined;
 }
 
@@ -29,7 +29,7 @@ export function normalizarEvento(raw: unknown): EventoFrontend | null {
   const e = raw as Record<string, unknown>;
   const nivel = typeof e.nivel === 'string' ? (e.nivel.toUpperCase() as LogLevel) : undefined;
   const mensaje = texto(e.mensaje, MAX_MENSAJE);
-  if (!nivel || !NIVELES.includes(nivel) || !mensaje) return null;
+  if (!nivel || !NIVELES.has(nivel) || !mensaje) return null;
 
   let meta: unknown = undefined;
   if (e.meta !== undefined) {
@@ -45,7 +45,7 @@ export function normalizarEvento(raw: unknown): EventoFrontend | null {
   return {
     nivel,
     mensaje,
-    contexto: texto(e.contexto, 60)?.replace(/[[\]]/g, ''),
+    contexto: texto(e.contexto, 60)?.replaceAll(/[[\]]/g, ''),
     fecha: texto(e.fecha, 40),
     url: texto(e.url, 500),
     sesion: texto(e.sesion, 64),
@@ -85,7 +85,7 @@ export class FrontendLogController {
         usuario: ev.usuario,
         ip: req.ip,
         navegador: texto(req.headers['user-agent'], 200),
-        ...(ev.meta !== undefined ? { meta: ev.meta } : {}),
+        ...(ev.meta === undefined ? {} : { meta: ev.meta }),
       };
       const metodo = ev.nivel.toLowerCase() as 'debug' | 'info' | 'warn' | 'error';
       ctx[metodo](ev.mensaje, detalle);

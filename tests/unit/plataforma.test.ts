@@ -1,7 +1,7 @@
-import { generateKeyPairSync } from 'crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'fs';
-import os from 'os';
-import path from 'path';
+import { generateKeyPairSync } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { NotificationService, rutaNotificacion } from '../../src/application/services/notification.service';
 import { PushService } from '../../src/application/services/push.service';
 import { Cotizador, TARIFAS_POR_DEFECTO, fechaProgramadaValida, paradasValidas } from '../../src/application/services/cotizador';
@@ -44,11 +44,11 @@ describe('Nequi Conecta', () => {
     await g.reembolsar({ telefono: '3001234567', monto: 15400, transaccionId: '350-123' });
     expect(llamadas.filter((l) => l.url.startsWith('https://auth'))).toHaveLength(1);
     expect(llamadas[0].init.headers).toMatchObject({ Authorization: `Basic ${Buffer.from('cliente:secreto').toString('base64')}` });
-    const cobro = JSON.parse(String(llamadas[1].init.body));
+    const cobro = JSON.parse(llamadas[1].init.body as string);
     expect(llamadas[1].init.headers).toMatchObject({ Authorization: 'Bearer tok', 'x-api-key': 'llave' });
     expect(cobro.RequestMessage.RequestHeader.Destination).toMatchObject({ ServiceName: 'PaymentsService', ServiceOperation: 'unregisteredPayment' });
     expect(cobro.RequestMessage.RequestBody.any.unregisteredPaymentRQ).toMatchObject({ phoneNumber: '3001234567', code: 'NIT_1', value: '15400' });
-    expect(JSON.parse(String(llamadas[3].init.body)).RequestMessage.RequestBody.any.reversionRQ).toMatchObject({ messageId: '350-123', type: 'payment' });
+    expect(JSON.parse(llamadas[3].init.body as string).RequestMessage.RequestBody.any.reversionRQ).toMatchObject({ messageId: '350-123', type: 'payment' });
   });
 
   it('traduce estados y errores', async () => {
@@ -59,7 +59,7 @@ describe('Nequi Conecta', () => {
       'rechazado',
       'rechazado',
     ]);
-    const sinAuth = new NequiConectaGateway(cfg, (async () => respuesta(401, {})) as unknown as typeof fetch);
+    const sinAuth = new NequiConectaGateway(cfg, async () => respuesta(401, {}));
     await expect(sinAuth.consultarEstado('x')).rejects.toThrow('No se pudo autenticar con Nequi (HTTP 401)');
     const conError = new NequiConectaGateway(cfg, (async (url: string) =>
       url.startsWith('https://auth')
@@ -143,7 +143,7 @@ describe('Cotizador: paradas, ida y vuelta y programados', () => {
     update: async () => null,
     remove: async () => null,
   };
-  const tarifas = { findAll: async () => TARIFAS_POR_DEFECTO, update: async () => null };
+  const tarifas = { findAll: async () => TARIFAS_POR_DEFECTO, update: async () => TARIFAS_POR_DEFECTO[0] };
 
   it('sin coordenadas exactas no admite paradas ni ida y vuelta', async () => {
     const aproximada = { calcularDistancia: async () => ({ distancia_km: 5, duracion_segundos: 600, origen: null, destino: null, exacta: false }) };
@@ -236,7 +236,7 @@ describe('Push y tiempo real', () => {
     expect(http.mock.calls.filter((c) => String(c[0]).includes('oauth2'))).toHaveLength(1);
     const malo = new FcmSender({ project_id: 'malo', client_email: 'x', private_key: privateKey }, http as unknown as typeof fetch);
     expect(await malo.enviar({ id_usuario: 1, plataforma: 'ios', endpoint: 't' }, m)).toBe(false);
-    const sinPermiso = new FcmSender({ project_id: 'p', client_email: 'x', private_key: privateKey }, (async () => respuesta(403, {})) as unknown as typeof fetch);
+    const sinPermiso = new FcmSender({ project_id: 'p', client_email: 'x', private_key: privateKey }, async () => respuesta(403, {}));
     await expect(sinPermiso.enviar({ id_usuario: 1, plataforma: 'ios', endpoint: 't' }, m)).rejects.toThrow('Firebase rechazó');
     expect(FcmSender.desdeArchivo('')).toBeNull();
     expect(FcmSender.desdeArchivo('/no/existe.json')).toBeNull();
@@ -321,7 +321,7 @@ describe('Tareas en segundo plano y fechas', () => {
     const programados = jest.fn(async () => Promise.reject(new Error('bd')));
     const liquidaciones = jest.fn(async () => [{}]);
     const c = { pagos: { procesarPendientes: { execute: pagos }, generarLiquidaciones: { execute: liquidaciones } }, envios: { anunciarProgramados: { execute: programados } } } as unknown as Contenedor;
-    const detener = iniciarTareas(c, logger.child('Prueba'), { pagosMs: 10, programadosMs: 10, liquidacionesMs: 10 });
+    const detener = iniciarTareas(c, logger.child('Prueba'), { pagosMs: 10, programadosMs: 10, liquidacionesMs: 10, documentosMs: 10 });
     await new Promise((r) => setTimeout(r, 60));
     detener();
     expect(pagos).toHaveBeenCalled();

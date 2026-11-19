@@ -1,6 +1,6 @@
-import { promises as fs } from 'fs';
-import os from 'os';
-import path from 'path';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import express from 'express';
 import multer from 'multer';
 import request from 'supertest';
@@ -48,6 +48,24 @@ describe('OpenStreetAdapter', () => {
     });
   }
   const crear = (f: ReturnType<typeof servidor>) => new OpenStreetAdapter('test@t.co', f as unknown as typeof fetch, 'https://osrm', 'https://nom', 0);
+
+  it('traza la ruta por calles con su geometría y la guarda en caché; sin OSRM une los puntos', async () => {
+    const A = { lat: 4.3369, lon: -74.3638 };
+    const B = { lat: 4.404, lon: -74.387 };
+    const f = servidor({ osrm: () => ({ code: 'Ok', routes: [{ distance: 12345, duration: 960, geometry: { coordinates: [[-74.3638, 4.3369], [-74.37, 4.37123456], [-74.387, 4.404]] } }] }) });
+    const osm = crear(f);
+    const r = await osm.trazarRuta([A, B]);
+    expect(r).toEqual({ km: 12.35, minutos: 20, exacta: true, puntos: [A, { lat: 4.37123, lon: -74.37 }, B] });
+    expect(f.mock.calls[0][0]).toBe('https://osrm/route/v1/driving/-74.3638,4.3369;-74.387,4.404?overview=simplified&geometries=geojson&alternatives=false');
+    await osm.trazarRuta([A, B]);
+    expect(f).toHaveBeenCalledTimes(1);
+    const caido = await crear(servidor({ osrm: () => new Error('caído') })).trazarRuta([A, B]);
+    expect(caido).toMatchObject({ exacta: false, puntos: [A, B] });
+    expect(caido.km).toBeGreaterThan(7);
+    const sinLinea = await crear(servidor({ osrm: () => ({ code: 'Ok', routes: [{ distance: 1, duration: 1 }] }) })).trazarRuta([A, B]);
+    expect(sinLinea.exacta).toBe(false);
+    expect((await crear(servidor({ osrm: () => undefined })).trazarRuta([A, B])).exacta).toBe(false);
+  });
 
   it('busca dentro de la región, descarta resultados lejanos y arma un nombre corto', async () => {
     const f = servidor({ nominatim: (u) => (u.includes('bounded=1') ? [MEXICO, FUSA, FUSA] : []) });

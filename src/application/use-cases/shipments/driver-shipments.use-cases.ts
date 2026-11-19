@@ -4,6 +4,7 @@ import { haversineKm, minutosEstimados } from '../../../domain/services/geo';
 import { categoriasAtendibles, puedeAtender } from '../../../domain/services/tarifas';
 import { PagoRepositoryPort, ParadaRepositoryPort } from '../../../domain/ports/platform.ports';
 import { PagosService, PublicadorEnvios } from '../../services/pagos.service';
+import { MAX_BULTOS, SERVICIOS } from '../../../domain/services/servicios';
 import { DriverRepositoryPort } from '../../../domain/ports/driver.repository.port';
 import { LocationRepositoryPort } from '../../../domain/ports/location.repository.port';
 import { ShipmentRepositoryPort } from '../../../domain/ports/shipment.repository.port';
@@ -22,6 +23,7 @@ import {
   exigirEstado,
   exigirMismoId,
 } from '../../services/access';
+import { aTexto } from '../../../domain/services/texto';
 
 export const TIPOS_FOTO = ['image/jpeg', 'image/png', 'image/webp'];
 /** Una ubicación más reciente que esto se considera "en vivo". */
@@ -35,8 +37,8 @@ export class ListAvailableShipmentsUseCase {
     private readonly envios: ShipmentRepositoryPort,
     private readonly drivers: DriverRepositoryPort,
     private readonly vehicles: VehicleRepositoryPort,
-    private readonly paradas?: ParadaRepositoryPort,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly paradas: ParadaRepositoryPort,
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor): Promise<EnvioApi[]> {
@@ -45,7 +47,7 @@ export class ListAvailableShipmentsUseCase {
     const lista = await this.envios.findAvailable(categoriasAtendibles(vehiculos), this.reloj());
     return Promise.all(
       lista.map(async (e) => {
-        const paradas = this.paradas ? await this.paradas.findByEnvio(e.id_envio as number) : undefined;
+        const paradas = await this.paradas.findByEnvio(e.id_envio as number);
         return presentarEnvio({ ...e, paradas }, { incluirPin: false, vistaConductor: true });
       }),
     );
@@ -74,8 +76,8 @@ export class AcceptShipmentUseCase {
     private readonly vehicles: VehicleRepositoryPort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
-    private readonly publicador?: PublicadorEnvios,
-    private readonly pagos?: PagoRepositoryPort,
+    private readonly publicador: PublicadorEnvios,
+    private readonly pagos: PagoRepositoryPort,
   ) {}
 
   async execute(actor: Actor, input: { id_envio: unknown; id_conductor?: unknown }): Promise<EnvioApi> {
@@ -86,7 +88,7 @@ export class AcceptShipmentUseCase {
       throw new ValidationError(`El envío ya está en estado ${envio.estado} y no se puede asignar`);
     }
     if (envio.id_conductor) throw new ValidationError('Este envío ya fue tomado por otro conductor');
-    if (this.publicador && this.pagos && !this.publicador.visible(envio, await this.pagos.findByEnvio(envio.id_envio as number))) {
+    if (!this.publicador.visible(envio, await this.pagos.findByEnvio(envio.id_envio as number))) {
       throw new ValidationError('Este envío todavía no está disponible para aceptar');
     }
 
@@ -108,33 +110,6 @@ export class AcceptShipmentUseCase {
       tipo: 'envio_aceptado',
       titulo: 'Un conductor tomó tu envío',
       mensaje: `${c.nombre} recogerá tu envío #${envio.id_envio} en ${envio.origen}.`,
-      id_envio: envio.id_envio,
-    });
-    return presentarEnvio(actualizado, { incluirPin: false, vistaConductor: true });
-  }
-}
-
-/** Iniciar ruta: Asignado → En Ruta. */
-export class StartRouteUseCase {
-  constructor(
-    private readonly envios: ShipmentRepositoryPort,
-    private readonly drivers: DriverRepositoryPort,
-    private readonly audit: AuditService,
-    private readonly notificaciones: NotificationService,
-  ) {}
-
-  async execute(actor: Actor, id: unknown): Promise<EnvioApi> {
-    const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
-    exigirEstado(envio, ['Asignado'], `El envío está en estado ${envio.estado} y no se puede iniciar la ruta`);
-    if (!envio.url_foto_recogida) throw new ValidationError('Toma la foto del paquete al recogerlo para iniciar la ruta');
-    await this.envios.updateStatus(envio.id_envio as number, 'En Ruta');
-    const actualizado = await envioExistente(this.envios, envio.id_envio);
-    await this.audit.registrar(actor, { accion: 'Ruta iniciada', entidad: 'Envío', idEntidad: envio.id_envio });
-    await this.notificaciones.notificar({
-      id_usuario: envio.id_cliente,
-      tipo: 'ruta_iniciada',
-      titulo: 'Tu envío va en camino',
-      mensaje: `El envío #${envio.id_envio} salió hacia ${envio.destino}. Puedes seguirlo en el mapa.`,
       id_envio: envio.id_envio,
     });
     return presentarEnvio(actualizado, { incluirPin: false, vistaConductor: true });
@@ -166,8 +141,8 @@ export class ValidateDeliveryUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
-    private readonly paradas?: ParadaRepositoryPort,
-    private readonly pagos?: PagosService,
+    private readonly paradas: ParadaRepositoryPort,
+    private readonly pagos: PagosService,
   ) {}
 
   async execute(actor: Actor, id: unknown, input: { url_foto: unknown; pin_seguridad: unknown; efectivo_recibido?: unknown }) {
@@ -180,21 +155,13 @@ export class ValidateDeliveryUseCase {
     if (input.pin_seguridad === undefined || input.pin_seguridad === null || input.pin_seguridad === '') {
       throw new ValidationError('El PIN de seguridad es obligatorio para validar la entrega');
     }
-    if (String(input.pin_seguridad) !== String(envio.pin_seguridad)) throw new ValidationError('PIN incorrecto');
-    if (this.paradas) {
-      const faltan = (await this.paradas.findByEnvio(envio.id_envio as number)).filter((p) => !p.completada_en);
-      if (faltan.length > 0) throw new ValidationError(`Marca como hechas las paradas pendientes (${faltan.map((p) => p.orden).join(', ')}) antes de finalizar`);
-    }
-    if (envio.ida_y_vuelta && !envio.destino_visitado_en) {
-      throw new ValidationError('Es un envío de ida y vuelta: marca la llegada al destino antes de finalizar en el origen');
-    }
-    const efectivo = (envio.metodo_pago ?? 'efectivo') === 'efectivo';
-    if (efectivo && this.pagos && input.efectivo_recibido !== true) {
-      throw new ValidationError(`Confirma que recibiste $ ${Math.round(envio.tarifa).toLocaleString('es-CO')} en efectivo`);
-    }
+    if (aTexto(input.pin_seguridad) !== envio.pin_seguridad) throw new ValidationError('PIN incorrecto');
+    await this.exigirCierre(envio, input.efectivo_recibido);
 
+    if (!envio.llegada_destino_en) await this.envios.markDestinationArrival(envio.id_envio as number, new Date());
     await this.envios.registerDelivery(envio.id_envio as number, input.url_foto);
-    if (efectivo && this.pagos) await this.pagos.cobrarEfectivo(envio.id_envio as number);
+    const efectivo = (envio.metodo_pago ?? 'efectivo') === 'efectivo';
+    if (efectivo) await this.pagos.cobrarEfectivo(envio.id_envio as number);
     await this.audit.registrar(actor, { accion: 'Entrega validada', entidad: 'Envío', idEntidad: envio.id_envio });
     await this.notificaciones.notificar({
       id_usuario: envio.id_cliente,
@@ -204,6 +171,20 @@ export class ValidateDeliveryUseCase {
       id_envio: envio.id_envio,
     });
     return { id_envio: envio.id_envio as number, estado: 'Entregado', origen: envio.origen, destino: envio.destino, url_foto: input.url_foto };
+  }
+
+  /** Antes de cerrar: paradas hechas, llegada en ida y vuelta y efectivo confirmado (servicio y compra). */
+  private async exigirCierre(envio: Envio, efectivoRecibido: unknown): Promise<void> {
+    const faltan = (await this.paradas.findByEnvio(envio.id_envio as number)).filter((p) => !p.completada_en);
+    if (faltan.length > 0) throw new ValidationError(`Marca como hechas las paradas pendientes (${faltan.map((p) => p.orden).join(', ')}) antes de finalizar`);
+    if (envio.ida_y_vuelta && !envio.destino_visitado_en) {
+      throw new ValidationError('Es un envío de ida y vuelta: marca la llegada al destino antes de finalizar en el origen');
+    }
+    const efectivo = (envio.metodo_pago ?? 'efectivo') === 'efectivo';
+    const aCobrar = (efectivo ? envio.tarifa : 0) + (envio.valor_compra ?? 0);
+    if (aCobrar > 0 && efectivoRecibido !== true) {
+      throw new ValidationError(`Confirma que recibiste $ ${Math.round(aCobrar).toLocaleString('es-CO')} en efectivo`);
+    }
   }
 }
 
@@ -221,7 +202,7 @@ export class RecordLocationUseCase {
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
       throw new ValidationError('Coordenadas fuera de rango');
     }
-    const capturado = input.capturado_en ? new Date(String(input.capturado_en)) : new Date();
+    const capturado = input.capturado_en ? new Date(aTexto(input.capturado_en)) : new Date();
     if (Number.isNaN(capturado.getTime())) throw new ValidationError('La fecha de captura no es válida');
     const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
     exigirEstado(envio, ESTADOS_ACTIVOS_CONDUCTOR, 'Solo se comparte la ubicación durante un servicio activo');
@@ -283,7 +264,7 @@ export class GetTrackingUseCase {
     private readonly envios: ShipmentRepositoryPort,
     private readonly drivers: DriverRepositoryPort,
     private readonly ubicaciones: LocationRepositoryPort,
-    private readonly ahora: () => Date = () => new Date(),
+    private readonly ahora: () => Date,
   ) {}
 
   async execute(actor: Actor, id: unknown): Promise<Seguimiento> {
@@ -328,9 +309,44 @@ export class GetTrackingUseCase {
   }
 }
 
+/** El conductor llegó al punto de recogida: el cliente recibe el aviso para tener lista la carga. */
+export class ArrivePickupUseCase {
+  constructor(
+    private readonly envios: ShipmentRepositoryPort,
+    private readonly drivers: DriverRepositoryPort,
+    private readonly notificaciones: NotificationService,
+    private readonly reloj: () => Date,
+  ) {}
+
+  async execute(actor: Actor, id: unknown): Promise<EnvioApi> {
+    const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
+    exigirEstado(envio, ['Asignado'], 'Solo puedes marcar la llegada a recoger antes de recoger la carga');
+    if (!envio.llegada_recogida_en) {
+      await this.envios.markPickupArrival(envio.id_envio as number, this.reloj());
+      await this.notificaciones.notificar({
+        id_usuario: envio.id_cliente,
+        tipo: 'conductor_en_recogida',
+        titulo: 'Tu conductor llegó a recoger',
+        mensaje: envio.codigo_recogida
+          ? `Está en ${envio.origen}. Quien entregue la carga debe darle el código de recogida que ves en el pedido #${envio.id_envio}.`
+          : `Está en ${envio.origen} haciendo tu pedido #${envio.id_envio}.`,
+        id_envio: envio.id_envio,
+      });
+    }
+    return presentarEnvio(await envioExistente(this.envios, envio.id_envio), { incluirPin: false, vistaConductor: true });
+  }
+}
+
+export interface DatosRecogidaEntrada {
+  codigo_recogida?: unknown;
+  bultos?: unknown;
+  valor_compra?: unknown;
+}
+
 /**
- * El conductor recoge el paquete: sube la foto y el envío pasa a En Ruta en un solo paso.
- * El cliente recibe el aviso con la foto como constancia del estado del paquete.
+ * El conductor recoge la carga: confirma el código de recogida (si el servicio lo pide), cuenta los
+ * bultos, registra el valor de la compra (mandados y mercados) y sube la foto. El envío pasa a En Ruta
+ * y el cliente recibe la foto como constancia. Si los bultos no coinciden con lo declarado, se le avisa.
  */
 export class PickupShipmentUseCase {
   constructor(
@@ -339,26 +355,52 @@ export class PickupShipmentUseCase {
     private readonly storage: StoragePort,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificationService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
-  async execute(actor: Actor, id: unknown, archivo?: ArchivoSubido): Promise<EnvioApi> {
-    if (!archivo) throw new ValidationError('Toma la foto del paquete al recogerlo');
+  async execute(actor: Actor, id: unknown, archivo: ArchivoSubido | undefined, datos: DatosRecogidaEntrada): Promise<EnvioApi> {
+    if (!archivo) throw new ValidationError('Toma la foto de la carga al recogerla');
     if (!TIPOS_FOTO.includes(archivo.mimetype)) throw new ValidationError('La foto debe ser JPG, PNG o WebP');
     const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
-    exigirEstado(envio, ['Asignado'], 'El paquete ya fue recogido o el servicio no está asignado');
+    exigirEstado(envio, ['Asignado'], 'La carga ya fue recogida o el servicio no está asignado');
+    if (envio.codigo_recogida && aTexto(datos.codigo_recogida).trim() !== envio.codigo_recogida) {
+      throw new ValidationError(
+        datos.codigo_recogida ? 'El código de recogida no coincide' : 'Pide el código de recogida a quien te entrega la carga',
+      );
+    }
+    const declarados = envio.detalle_servicio?.bultos ?? null;
+    const bultos = numeroOpcional(datos.bultos, 'bultos', 1, MAX_BULTOS);
+    if (declarados && bultos === null) throw new ValidationError(`Cuenta los bultos: el cliente declaró ${declarados}`);
+    const conCompra = SERVICIOS[envio.tipo_servicio ?? 'paquete'].conCompra;
+    const valorCompra = conCompra ? numeroOpcional(datos.valor_compra, 'valor de la compra', 0, 5_000_000) : null;
+
     const url = await this.storage.upload(archivo, `trackit/recogidas/${envio.id_envio}`);
-    await this.envios.registerPickup(envio.id_envio as number, url, this.reloj());
-    await this.audit.registrar(actor, { accion: 'Paquete recogido', entidad: 'Envío', idEntidad: envio.id_envio });
+    await this.envios.registerPickup(envio.id_envio as number, url, this.reloj(), { bultos, valor_compra: valorCompra });
+    await this.audit.registrar(actor, {
+      accion: 'Carga recogida',
+      entidad: 'Envío',
+      idEntidad: envio.id_envio,
+      detalle: [bultos ? `${bultos} bultos` : '', valorCompra ? `compra $${valorCompra}` : ''].filter(Boolean).join(' · ') || undefined,
+    });
+    const diferencia = declarados && bultos !== declarados ? `Contó ${bultos} bultos y declaraste ${declarados}. ` : '';
+    const compra = valorCompra ? ` La compra costó $ ${valorCompra.toLocaleString('es-CO')} (foto de la factura en el pedido).` : '';
     await this.notificaciones.notificar({
       id_usuario: envio.id_cliente,
       tipo: 'paquete_recogido',
-      titulo: 'Tu paquete va en camino',
-      mensaje: `El conductor recogió el envío #${envio.id_envio} y salió hacia ${envio.destino}. Mira la foto y síguelo en el mapa.`,
+      titulo: diferencia ? 'Revisa los bultos de tu pedido' : 'Tu pedido va en camino',
+      mensaje: `${diferencia}El conductor recogió el pedido #${envio.id_envio} y salió hacia ${envio.destino}.${compra}`,
       id_envio: envio.id_envio,
     });
     return presentarEnvio(await envioExistente(this.envios, envio.id_envio), { incluirPin: false, vistaConductor: true });
   }
+}
+
+/** Número entero opcional en un rango; null si viene vacío. */
+function numeroOpcional(v: unknown, campo: string, min: number, max: number): number | null {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < min || n > max) throw new ValidationError(`El campo "${campo}" debe estar entre ${min} y ${max}`);
+  return n;
 }
 
 /** El conductor marca una parada intermedia como hecha. */
@@ -368,7 +410,7 @@ export class CompleteStopUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly paradas: ParadaRepositoryPort,
     private readonly notificaciones: NotificationService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor, id: unknown, idParadaCrudo: unknown) {
@@ -386,27 +428,41 @@ export class CompleteStopUseCase {
   }
 }
 
-/** Ida y vuelta: el conductor llegó al destino y ahora regresa al origen. */
+/**
+ * Llegada al punto de entrega. En un envío de ida y vuelta, la primera llegada es al destino
+ * (el conductor regresa al origen) y la segunda es la entrega final.
+ */
 export class ArriveDestinationUseCase {
   constructor(
     private readonly envios: ShipmentRepositoryPort,
     private readonly drivers: DriverRepositoryPort,
     private readonly notificaciones: NotificationService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor, id: unknown): Promise<EnvioApi> {
     const { envio } = await envioDelConductor(this.envios, this.drivers, actor, id);
-    if (!envio.ida_y_vuelta) throw new ValidationError('Este envío no es de ida y vuelta');
-    exigirEstado(envio, ['En Ruta'], 'Inicia la ruta antes de marcar la llegada');
-    await this.envios.markDestinationVisited(envio.id_envio as number, this.reloj());
-    await this.notificaciones.notificar({
-      id_usuario: envio.id_cliente,
-      tipo: 'ruta_iniciada',
-      titulo: 'Llegó al destino y regresa',
-      mensaje: `El conductor llegó a ${envio.destino} con tu envío #${envio.id_envio} y ya viene de vuelta.`,
-      id_envio: envio.id_envio,
-    });
+    exigirEstado(envio, ['En Ruta'], 'Recoge la carga antes de marcar la llegada');
+    if (envio.ida_y_vuelta && !envio.destino_visitado_en) {
+      await this.envios.markDestinationVisited(envio.id_envio as number, this.reloj());
+      await this.notificaciones.notificar({
+        id_usuario: envio.id_cliente,
+        tipo: 'ruta_iniciada',
+        titulo: 'Llegó al destino y regresa',
+        mensaje: `El conductor llegó a ${envio.destino} con tu envío #${envio.id_envio} y ya viene de vuelta.`,
+        id_envio: envio.id_envio,
+      });
+    } else if (!envio.llegada_destino_en) {
+      const final = envio.ida_y_vuelta ? envio.origen : envio.destino;
+      await this.envios.markDestinationArrival(envio.id_envio as number, this.reloj());
+      await this.notificaciones.notificar({
+        id_usuario: envio.id_cliente,
+        tipo: 'conductor_en_destino',
+        titulo: 'Tu conductor llegó a entregar',
+        mensaje: `Está en ${final} con el pedido #${envio.id_envio}. Para recibirlo hay que darle el PIN de entrega.`,
+        id_envio: envio.id_envio,
+      });
+    }
     return presentarEnvio(await envioExistente(this.envios, envio.id_envio), { incluirPin: false, vistaConductor: true });
   }
 }
@@ -417,7 +473,7 @@ export class AnnounceScheduledUseCase {
     private readonly envios: ShipmentRepositoryPort,
     private readonly pagos: PagoRepositoryPort,
     private readonly publicador: PublicadorEnvios,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(): Promise<number> {

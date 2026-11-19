@@ -138,7 +138,7 @@ export class GenerateSettlementsUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly notificaciones: NotificationService,
     private readonly audit: AuditService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor | null, input: { hasta?: unknown } = {}): Promise<Liquidacion[]> {
@@ -196,7 +196,7 @@ export class PaySettlementUseCase {
     private readonly drivers: DriverRepositoryPort,
     private readonly notificaciones: NotificationService,
     private readonly audit: AuditService,
-    private readonly reloj: () => Date = () => new Date(),
+    private readonly reloj: () => Date,
   ) {}
 
   async execute(actor: Actor, idCrudo: unknown, input: { referencia?: unknown }) {

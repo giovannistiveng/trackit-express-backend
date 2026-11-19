@@ -1,8 +1,8 @@
 import { describe, it, expect } from '@jest/globals';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import http from 'http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
 import express from 'express';
 import { Logger } from '../../src/shared/logger/logger';
 import { FrontendLogController, normalizarEvento } from '../../src/infrastructure/http/frontend-log.controller';

@@ -30,7 +30,7 @@ describe('reglas de tarifa', () => {
   it('suma banderazo, km y minutos, redondea a 100 hacia arriba', () => {
     const d = calcularTarifaDetallada({ tarifa: MOTO, distanciaKm: 3.2, minutos: 9, recargoZona: 0, fecha: MEDIODIA });
     // 2.000 + 2.240 + 450 = 4.690 → 4.700
-    expect(d).toEqual({ categoria: 'Moto Express', banderazo: 2000, distancia: 2240, tiempo: 450, recargo_zona: 0, paradas: 0, recargo_paradas: 0, ida_y_vuelta: false, recargo_nocturno: 0, minimo_aplicado: false, total: 4700 });
+    expect(d).toEqual({ categoria: 'Moto Express', banderazo: 2000, distancia: 2240, tiempo: 450, recargo_zona: 0, paradas: 0, recargo_paradas: 0, ida_y_vuelta: false, extras: [], recargo_acceso: 0, recargo_nocturno: 0, minimo_aplicado: false, total: 4700 });
   });
 
   it('aplica la tarifa mínima en viajes cortos y el recargo nocturno del 20 %', () => {
@@ -52,11 +52,12 @@ describe('reglas de tarifa', () => {
   it('un vehículo grande atiende pedidos de su tamaño o menores', () => {
     expect(categoriasAtendibles([])).toEqual([]);
     expect(categoriasAtendibles(['Moto Express'])).toEqual(['Moto Express']);
-    expect(categoriasAtendibles(['Moto Express', 'Camioneta'])).toEqual(['Moto Express', 'Motocarro', 'Camioneta']);
-    expect(puedeAtender(['Motocarro'], null)).toBe(true);
-    expect(puedeAtender(['Motocarro'], 'Camioneta')).toBe(false);
-    expect(vehiculosQuePuedenLlevar('Motocarro')).toEqual(['Motocarro', 'Camioneta']);
-    expect(vehiculosQuePuedenLlevar(null)).toHaveLength(3);
+    expect(categoriasAtendibles(['Furgoneta'])).toEqual(['Moto Express', 'Furgoneta']);
+    expect(puedeAtender(['Moto Express'], null)).toBe(true);
+    expect(puedeAtender(['Moto Express'], 'Furgoneta')).toBe(false);
+    expect(puedeAtender(['Furgoneta'], 'Moto Express')).toBe(true);
+    expect(vehiculosQuePuedenLlevar('Moto Express')).toEqual(['Moto Express', 'Furgoneta']);
+    expect(vehiculosQuePuedenLlevar(null)).toHaveLength(2);
   });
 
   it('elige la zona activa más pequeña que contiene el punto', () => {
@@ -105,13 +106,13 @@ describe('Cotizador', () => {
   ]);
 
   it('sin coordenadas usa la zona elegida a mano y las tarifas por defecto si la tabla falla', async () => {
-    const tarifasRotas = { findAll: async () => Promise.reject(new Error('no existe la tabla')), update: async () => null };
+    const tarifasRotas = { findAll: async () => Promise.reject(new Error('no existe la tabla')), update: async () => MOTO };
     const c = new Cotizador(zonas, tarifasRotas, sinCoords, () => MEDIODIA);
-    const r = await c.cotizar({ origen: 'Centro', destino: 'Finca', id_zona: 2, categoria: 'Motocarro' });
+    const r = await c.cotizar({ origen: 'Centro', destino: 'Finca', id_zona: 2, categoria: 'Furgoneta' });
     expect(r.zona.nombre_zona).toBe('Vereda');
     expect(r.zonaOrigen).toBeNull();
-    // 5 km y 10 min en Motocarro: 4.000 + 4.750 + 800 = 9.550 + 2.000 → 11.600
-    expect(r.desglose.total).toBe(11600);
+    // 5 km y 10 min en Furgoneta: 12.000 + 9.000 + 1.500 = 22.500 + 2.000 → 24.500
+    expect(r.desglose.total).toBe(24500);
     await expect(c.cotizar({ origen: 'Centro', destino: 'Finca' })).rejects.toThrow('Elígela en el mapa o selecciona la zona');
     await expect(c.cotizar({ origen: 'Centro', destino: 'Finca', id_zona: 3 })).rejects.toThrow(NotFoundError);
     await expect(c.cotizar({ origen: 'Centro', destino: 'Finca', origen_coords: { lat: 'x', lon: 1 } })).rejects.toThrow(ValidationError);
@@ -120,7 +121,7 @@ describe('Cotizador', () => {
 
   it('rechaza origen y destino en el mismo punto; usa tarifas por defecto si la tabla está vacía', async () => {
     const mismo: DistancePort = { calcularDistancia: async () => ({ distancia_km: 0.01, duracion_segundos: 10, origen: { lat: 4.3365, lon: -74.3638 }, destino: { lat: 4.3365, lon: -74.3638 }, exacta: true }) };
-    const c = new Cotizador(zonas, { findAll: async () => [], update: async () => null }, mismo);
+    const c = new Cotizador(zonas, { findAll: async () => [], update: async () => MOTO }, mismo);
     await expect(c.cotizar({ origen: 'Aquí', destino: 'Allí' })).rejects.toThrow('mismo lugar');
   });
 });
@@ -144,12 +145,12 @@ describe('casos de uso de zonas, tarifas y direcciones', () => {
     const guardadas: unknown[] = [];
     const repo = { findAll: async () => [], update: async (c: string, t: object) => (guardadas.push(t), { categoria: c, ...t }) };
     await expect(new UpdateVehicleTariffUseCase(repo as never, audit).execute(ADMIN, '', {})).rejects.toThrow('Indica la categoría');
-    const t = await new UpdateVehicleTariffUseCase(repo as never, audit).execute(ADMIN, 'Camioneta', { banderazo: '10000.4', por_km: 1800, por_minuto: 150, minimo: 20000 });
-    expect(t).toEqual({ categoria: 'Camioneta', banderazo: 10000, por_km: 1800, por_minuto: 150, minimo: 20000 });
+    const t = await new UpdateVehicleTariffUseCase(repo as never, audit).execute(ADMIN, 'Furgoneta', { banderazo: '10000.4', por_km: 1800, por_minuto: 150, minimo: 20000 });
+    expect(t).toEqual({ categoria: 'Furgoneta', banderazo: 10000, por_km: 1800, por_minuto: 150, minimo: 20000 });
     const lista = await new ListVehicleTariffsUseCase(repo as never).execute();
     expect(lista.tarifas).toBe(TARIFAS_POR_DEFECTO);
     const rota = await new ListVehicleTariffsUseCase({ findAll: () => Promise.reject(new Error('x')) } as never).execute();
-    expect(rota.tarifas).toHaveLength(3);
+    expect(rota.tarifas).toHaveLength(2);
   });
 
   it('busca direcciones y valida coordenadas', async () => {

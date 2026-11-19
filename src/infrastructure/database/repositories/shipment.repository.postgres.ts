@@ -8,12 +8,15 @@ import {
   FiltroEnviosAdmin,
   HistorialEstadoRow,
   ResumenConductor,
+  DatosRecogida,
   ShipmentRepositoryPort,
 } from '../../../domain/ports/shipment.repository.port';
+import { DetalleServicio, TipoServicio } from '../../../domain/services/servicios';
 import { ANTICIPO_PROGRAMADO_MIN, COMISION_PLATAFORMA } from '../../../domain/entities/shipment.entity';
 import { ValidationError } from '../../../shared/errors';
-import { NumeroPg, esViolacionUnica, patronBusqueda } from '../pg-utils';
+import { NumeroPg, enTransaccion, esViolacionUnica, filasAfectadas, patronBusqueda } from '../pg-utils';
 
+/** Fila de Envio tal como la devuelve PostgreSQL (`SELECT e.*`): las columnas nulas llegan como null. */
 interface EnvioRow {
   id_envio: number;
   origen: string;
@@ -26,27 +29,35 @@ interface EnvioRow {
   id_zona: number;
   categoria: VehicleCategory | null;
   fecha_creacion: Date;
-  origen_lat?: NumeroPg;
-  origen_lon?: NumeroPg;
-  destino_lat?: NumeroPg;
-  destino_lon?: NumeroPg;
-  distancia_km?: NumeroPg;
-  duracion_min?: number | null;
-  desglose?: DesgloseTarifa | null;
-  notas?: string | null;
-  motivo_cancelacion?: string | null;
-  metodo_pago?: 'efectivo' | 'nequi';
-  token_seguimiento?: string | null;
-  destinatario_nombre?: string | null;
-  destinatario_telefono?: string | null;
-  fecha_programada?: Date | null;
-  aviso_programado?: boolean;
-  ida_y_vuelta?: boolean;
-  destino_visitado_en?: Date | null;
-  url_foto_recogida?: string | null;
-  fecha_recogida?: Date | null;
+  origen_lat: NumeroPg;
+  origen_lon: NumeroPg;
+  destino_lat: NumeroPg;
+  destino_lon: NumeroPg;
+  distancia_km: NumeroPg;
+  duracion_min: number | null;
+  desglose: DesgloseTarifa | null;
+  notas: string | null;
+  motivo_cancelacion: string | null;
+  metodo_pago: 'efectivo' | 'nequi';
+  token_seguimiento: string | null;
+  destinatario_nombre: string | null;
+  destinatario_telefono: string | null;
+  fecha_programada: Date | null;
+  aviso_programado: boolean;
+  ida_y_vuelta: boolean;
+  destino_visitado_en: Date | null;
+  url_foto_recogida: string | null;
+  fecha_recogida: Date | null;
+  tipo_servicio: TipoServicio;
+  detalle_servicio: DetalleServicio | null;
+  codigo_recogida: string | null;
+  llegada_recogida_en: Date | null;
+  llegada_destino_en: Date | null;
+  bultos_recogidos: number | null;
+  valor_compra: NumeroPg;
   estado: EstadoEnvio;
-  fecha_ultimo_cambio?: Date | null;
+  fecha_ultimo_cambio: Date | null;
+  /** Solo en las consultas del cliente y del administrador (columnas unidas). */
   calificacion?: NumeroPg;
   comentario?: string | null;
   conductor_nombre?: string | null;
@@ -68,22 +79,26 @@ const SELECT_ENVIO = `
   SELECT e.*, COALESCE(ult.estado, 'Pendiente') AS estado, ult.fecha_cambio AS fecha_ultimo_cambio
   FROM Envio e ${ULTIMO_CAMBIO}`;
 
-function coords(lat: NumeroPg | undefined, lon: NumeroPg | undefined) {
-  return lat === null || lat === undefined || lon === null || lon === undefined ? null : { lat: Number(lat), lon: Number(lon) };
+function coords(lat: NumeroPg, lon: NumeroPg) {
+  return lat === null || lon === null ? null : { lat: Number(lat), lon: Number(lon) };
+}
+
+/** Número de PostgreSQL (DECIMAL llega como texto) o null. */
+function numeroONull(v: NumeroPg | undefined): number | null {
+  return v === null || v === undefined ? null : Number(v);
 }
 
 export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
   constructor(private readonly pool: Pool) {}
 
   async create(envio: Omit<Envio, 'id_envio'>): Promise<Envio> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
+    return enTransaccion(this.pool, async (client) => {
       const result = await client.query<EnvioRow>(
         `INSERT INTO Envio (origen, destino, tipo_carga, tarifa, pin_seguridad, id_cliente, id_zona, categoria,
                             origen_lat, origen_lon, destino_lat, destino_lon, distancia_km, notas, duracion_min, desglose,
-                            metodo_pago, token_seguimiento, destinatario_nombre, destinatario_telefono, fecha_programada, ida_y_vuelta)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                            metodo_pago, token_seguimiento, destinatario_nombre, destinatario_telefono, fecha_programada, ida_y_vuelta,
+                            tipo_servicio, detalle_servicio, codigo_recogida)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
          RETURNING *`,
         [
           envio.origen,
@@ -93,33 +108,30 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
           envio.pin_seguridad,
           envio.id_cliente,
           envio.id_zona,
-          envio.categoria ?? null,
-          envio.origen_coords?.lat ?? null,
-          envio.origen_coords?.lon ?? null,
-          envio.destino_coords?.lat ?? null,
-          envio.destino_coords?.lon ?? null,
-          envio.distancia_km ?? null,
-          envio.notas ?? null,
-          envio.duracion_min ?? null,
+          envio.categoria,
+          envio.origen_coords?.lat,
+          envio.origen_coords?.lon,
+          envio.destino_coords?.lat,
+          envio.destino_coords?.lon,
+          envio.distancia_km,
+          envio.notas,
+          envio.duracion_min,
           envio.desglose ? JSON.stringify(envio.desglose) : null,
           envio.metodo_pago ?? 'efectivo',
-          envio.token_seguimiento ?? null,
-          envio.destinatario_nombre ?? null,
-          envio.destinatario_telefono ?? null,
-          envio.fecha_programada ?? null,
+          envio.token_seguimiento,
+          envio.destinatario_nombre,
+          envio.destinatario_telefono,
+          envio.fecha_programada,
           envio.ida_y_vuelta ?? false,
+          envio.tipo_servicio ?? 'paquete',
+          envio.detalle_servicio ? JSON.stringify(envio.detalle_servicio) : null,
+          envio.codigo_recogida,
         ],
       );
       const row = result.rows[0];
       await client.query('INSERT INTO Historial_Estado (estado, id_envio) VALUES ($1, $2)', ['Pendiente', row.id_envio]);
-      await client.query('COMMIT');
       return this.mapRow({ ...row, estado: 'Pendiente' });
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async findById(id_envio: number): Promise<Envio | null> {
@@ -167,7 +179,7 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
     return result.rows.map((row) => this.mapRow(row));
   }
 
-  async findAvailable(categorias?: VehicleCategory[], ahora: Date = new Date()): Promise<Envio[]> {
+  async findAvailable(categorias: VehicleCategory[], ahora: Date): Promise<Envio[]> {
     // Solo envíos con el pago garantizado (efectivo o Nequi aprobado) y, si son programados,
     // desde una hora antes de la hora pactada
     const result = await this.pool.query<EnvioRow>(
@@ -178,7 +190,7 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
          AND (p.id_pago IS NULL OR p.metodo = 'efectivo' OR p.estado = 'aprobado')
          AND (t.fecha_programada IS NULL OR t.fecha_programada <= $2::timestamp + make_interval(mins => $3))
        ORDER BY COALESCE(t.fecha_programada, t.fecha_creacion), t.id_envio`,
-      [categorias ?? null, ahora, ANTICIPO_PROGRAMADO_MIN],
+      [categorias, ahora, ANTICIPO_PROGRAMADO_MIN],
     );
     return result.rows.map((row) => this.mapRow(row));
   }
@@ -201,19 +213,24 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
     await this.pool.query(`UPDATE Envio SET ${sets.join(', ')} WHERE id_envio = $${params.length}`, params);
   }
 
-  async registerPickup(id_envio: number, url_foto: string, ahora: Date): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('UPDATE Envio SET url_foto_recogida = $1, fecha_recogida = $2 WHERE id_envio = $3', [url_foto, ahora, id_envio]);
+  async registerPickup(id_envio: number, url_foto: string, ahora: Date, datos: DatosRecogida): Promise<void> {
+    return enTransaccion(this.pool, async (client) => {
+      await client.query(
+        `UPDATE Envio SET url_foto_recogida = $1, fecha_recogida = $2, bultos_recogidos = $3, valor_compra = $4,
+                llegada_recogida_en = COALESCE(llegada_recogida_en, $2)
+         WHERE id_envio = $5`,
+        [url_foto, ahora, datos.bultos ?? null, datos.valor_compra ?? null, id_envio],
+      );
       await client.query(`INSERT INTO Historial_Estado (estado, id_envio) VALUES ('En Ruta', $1)`, [id_envio]);
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
+  }
+
+  async markPickupArrival(id_envio: number, ahora: Date): Promise<void> {
+    await this.pool.query('UPDATE Envio SET llegada_recogida_en = $1 WHERE id_envio = $2 AND llegada_recogida_en IS NULL', [ahora, id_envio]);
+  }
+
+  async markDestinationArrival(id_envio: number, ahora: Date): Promise<void> {
+    await this.pool.query('UPDATE Envio SET llegada_destino_en = $1 WHERE id_envio = $2 AND llegada_destino_en IS NULL', [ahora, id_envio]);
   }
 
   async markDestinationVisited(id_envio: number, ahora: Date): Promise<void> {
@@ -239,25 +256,17 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
   }
 
   async updateStatus(id_envio: number, estado: EstadoEnvio, id_conductor?: number): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
+    return enTransaccion(this.pool, async (client) => {
       // Asignar conductor solo si el envío aún no tiene uno (evita doble asignación concurrente)
       if (id_conductor) {
         const update = await client.query('UPDATE Envio SET id_conductor = $1 WHERE id_envio = $2 AND id_conductor IS NULL', [
           id_conductor,
           id_envio,
         ]);
-        if (update.rowCount === 0) throw new ValidationError('Este envío ya fue tomado por otro conductor');
+        if (filasAfectadas(update) === 0) throw new ValidationError('Este envío ya fue tomado por otro conductor');
       }
       await client.query('INSERT INTO Historial_Estado (estado, id_envio) VALUES ($1, $2)', [estado, id_envio]);
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async getStatusHistory(id_envio: number): Promise<HistorialEstadoRow[]> {
@@ -269,19 +278,15 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
   }
 
   async registerDelivery(id_envio: number, url_foto: string): Promise<void> {
-    const client = await this.pool.connect();
     try {
-      await client.query('BEGIN');
-      await client.query('INSERT INTO Evidencia_Entrega (url_foto, id_envio) VALUES ($1, $2)', [url_foto, id_envio]);
-      await client.query('INSERT INTO Historial_Estado (estado, id_envio) VALUES ($1, $2)', ['Entregado', id_envio]);
-      await client.query('COMMIT');
+      await enTransaccion(this.pool, async (client) => {
+        await client.query('INSERT INTO Evidencia_Entrega (url_foto, id_envio) VALUES ($1, $2)', [url_foto, id_envio]);
+        await client.query('INSERT INTO Historial_Estado (estado, id_envio) VALUES ($1, $2)', ['Entregado', id_envio]);
+      });
     } catch (error) {
-      await client.query('ROLLBACK');
       // Evidencia_Entrega.id_envio es UNIQUE
       if (esViolacionUnica(error)) throw new ValidationError('Este envío ya tiene una evidencia de entrega registrada');
       throw error;
-    } finally {
-      client.release();
     }
   }
 
@@ -290,7 +295,7 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
     return result.rows[0] ? Number(result.rows[0].puntuacion) : null;
   }
 
-  async saveCalification(id_envio: number, puntuacion: number, comentario: string | null = null): Promise<void> {
+  async saveCalification(id_envio: number, puntuacion: number, comentario: string | null): Promise<void> {
     try {
       await this.pool.query('INSERT INTO Calificacion (puntuacion, comentario, id_envio) VALUES ($1, $2, $3)', [
         puntuacion,
@@ -304,9 +309,7 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
   }
 
   async cancel(id_envio: number, motivo: string | null): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
+    return enTransaccion(this.pool, async (client) => {
       // Bloquea el envío para que no lo acepten ni lo entreguen mientras se cancela
       await client.query('SELECT id_envio FROM Envio WHERE id_envio = $1 FOR UPDATE', [id_envio]);
       const actual = await client.query<{ estado: string }>(
@@ -319,13 +322,7 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
       }
       await client.query('UPDATE Envio SET motivo_cancelacion = $1 WHERE id_envio = $2', [motivo, id_envio]);
       await client.query(`INSERT INTO Historial_Estado (estado, id_envio) VALUES ('Cancelado', $1)`, [id_envio]);
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async findDriverHistory(id_conductor: number, limite: number): Promise<EnvioDetallado[]> {
@@ -405,7 +402,7 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
       total: result.rows[0] ? Number(result.rows[0].total) : 0,
       items: result.rows.map((row) => ({
         ...this.mapRow(row),
-        fecha_ultimo_cambio: row.fecha_ultimo_cambio ? new Date(row.fecha_ultimo_cambio) : undefined,
+        fecha_ultimo_cambio: row.fecha_ultimo_cambio ?? undefined,
         cliente_nombre: row.cliente_nombre,
         cliente_correo: row.cliente_correo,
         conductor_nombre: row.conductor_nombre ?? null,
@@ -425,25 +422,32 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
       id_cliente: row.id_cliente,
       id_conductor: row.id_conductor ?? undefined,
       id_zona: row.id_zona,
-      categoria: row.categoria ?? null,
-      fecha_creacion: row.fecha_creacion ? new Date(row.fecha_creacion) : undefined,
+      categoria: row.categoria,
+      fecha_creacion: row.fecha_creacion,
       origen_coords: coords(row.origen_lat, row.origen_lon),
       destino_coords: coords(row.destino_lat, row.destino_lon),
-      distancia_km: row.distancia_km === null || row.distancia_km === undefined ? null : Number(row.distancia_km),
-      duracion_min: row.duracion_min ?? null,
-      desglose: row.desglose ?? null,
-      notas: row.notas ?? null,
-      motivo_cancelacion: row.motivo_cancelacion ?? null,
-      metodo_pago: row.metodo_pago ?? 'efectivo',
-      token_seguimiento: row.token_seguimiento ?? null,
-      destinatario_nombre: row.destinatario_nombre ?? null,
-      destinatario_telefono: row.destinatario_telefono ?? null,
-      fecha_programada: row.fecha_programada ? new Date(row.fecha_programada) : null,
-      aviso_programado: row.aviso_programado ?? false,
-      ida_y_vuelta: row.ida_y_vuelta ?? false,
-      destino_visitado_en: row.destino_visitado_en ? new Date(row.destino_visitado_en) : null,
-      url_foto_recogida: row.url_foto_recogida ?? null,
-      fecha_recogida: row.fecha_recogida ? new Date(row.fecha_recogida) : null,
+      distancia_km: numeroONull(row.distancia_km),
+      duracion_min: row.duracion_min,
+      desglose: row.desglose,
+      notas: row.notas,
+      motivo_cancelacion: row.motivo_cancelacion,
+      metodo_pago: row.metodo_pago,
+      token_seguimiento: row.token_seguimiento,
+      destinatario_nombre: row.destinatario_nombre,
+      destinatario_telefono: row.destinatario_telefono,
+      fecha_programada: row.fecha_programada,
+      aviso_programado: row.aviso_programado,
+      ida_y_vuelta: row.ida_y_vuelta,
+      destino_visitado_en: row.destino_visitado_en,
+      url_foto_recogida: row.url_foto_recogida,
+      fecha_recogida: row.fecha_recogida,
+      tipo_servicio: row.tipo_servicio,
+      detalle_servicio: row.detalle_servicio,
+      codigo_recogida: row.codigo_recogida,
+      llegada_recogida_en: row.llegada_recogida_en,
+      llegada_destino_en: row.llegada_destino_en,
+      bultos_recogidos: row.bultos_recogidos,
+      valor_compra: numeroONull(row.valor_compra),
       estado: row.estado,
     };
   }
@@ -451,15 +455,15 @@ export class ShipmentRepositoryPostgres implements ShipmentRepositoryPort {
   private mapDetallado(row: EnvioRow): EnvioDetallado {
     return {
       ...this.mapRow(row),
-      fecha_ultimo_cambio: row.fecha_ultimo_cambio ? new Date(row.fecha_ultimo_cambio) : undefined,
-      calificacion: row.calificacion === null || row.calificacion === undefined ? null : Number(row.calificacion),
+      fecha_ultimo_cambio: row.fecha_ultimo_cambio ?? undefined,
+      calificacion: numeroONull(row.calificacion),
       comentario: row.comentario ?? null,
       conductor: row.conductor_nombre
         ? {
             nombre: row.conductor_nombre,
             placa: row.conductor_placa ?? null,
             vehiculo: row.conductor_vehiculo ?? null,
-            calificacion_promedio: row.conductor_promedio === null || row.conductor_promedio === undefined ? null : Number(row.conductor_promedio),
+            calificacion_promedio: numeroONull(row.conductor_promedio),
           }
         : null,
     };

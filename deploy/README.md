@@ -100,6 +100,9 @@ Restaurar: `gunzip -c respaldo.sql.gz | docker compose exec -T db psql -U tracki
 
 ### 2.5 Paso a la nube
 
+> **Implementado para AWS:** sigue la guía [`aws/README.md`](aws/README.md) (EC2 + Docker + HTTPS con Caddy
+> + despliegue automático desde GitHub Actions). Lo de abajo queda como referencia general.
+
 La misma VM se replica en cualquier proveedor (AWS EC2/Lightsail, DigitalOcean, Azure, Google Cloud,
 Oracle Cloud Free Tier): Ubuntu 24.04, 2 vCPU / 4 GB, y los pasos 2.2–2.4 sin cambios. Además:
 

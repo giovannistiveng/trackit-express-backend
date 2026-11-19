@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { Express } from 'express';
 import { pool } from '../../src/config/database';
-import { FUSA, SILVANIA, crearAppPrueba, hayBaseDeDatos, reiniciarBase, sesion, sesionAdmin } from '../helpers/app';
+import { FUSA, SILVANIA, crearAppPrueba, hayBaseDeDatos, reiniciarBase, sesion, sesionAdmin, aprobarConductor } from '../helpers/app';
 
 const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 let disponible = false;
@@ -33,7 +33,7 @@ async function conductorListo(correo: string, placa: string) {
   const admin = await sesionAdmin(app);
   const me = (await request(app).get('/api/conductores/me').set(auth(s.token))).body;
   await request(app).post('/api/vehicles/register').set(auth(s.token)).send({ placa, categoria: 'Moto Express' });
-  await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: me.id_conductor, approved: true });
+  await aprobarConductor(app, s.token, admin.token, me.id_conductor);
   return { ...s, idConductor: me.id_conductor as number };
 }
 
@@ -63,7 +63,7 @@ describe('Sitio público', () => {
       descripcion: 'Casco urbano de Fusagasugá',
     });
     const tarifas = await request(app).get('/api/publico/tarifas');
-    expect(tarifas.body.tarifas).toHaveLength(3);
+    expect(tarifas.body.tarifas).toHaveLength(2);
     expect(tarifas.body).toMatchObject({ recargo_nocturno: 0.2, horario_nocturno: '20:00 a 5:59' });
   });
 
@@ -168,7 +168,7 @@ describe('Seguimiento, notificaciones, reputación y ganancias', () => {
     expect(s0).toMatchObject({ estado: 'Pendiente', recorrido: [], en_vivo: false, eta_minutos: null, destino: { direccion: 'Silvania', coords: SILVANIA } });
 
     await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: envio.id_envio });
-    await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
+    await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).field('codigo_recogida', String(envio.codigo_recogida)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
     const ahora = Date.now();
     for (let i = 0; i < 3; i++) {
       await request(app)
@@ -267,13 +267,13 @@ describe('Seguimiento, notificaciones, reputación y ganancias', () => {
 
     // Tarifas por vehículo
     expect((await request(app).put('/api/admin/tarifas/Avi%C3%B3n').set(auth(admin.token)).send({})).status).toBe(400);
-    expect((await request(app).put('/api/admin/tarifas/Motocarro').set(auth(admin.token)).send({ banderazo: -1, por_km: 1, por_minuto: 1, minimo: 1 })).status).toBe(400);
+    expect((await request(app).put('/api/admin/tarifas/Furgoneta').set(auth(admin.token)).send({ banderazo: -1, por_km: 1, por_minuto: 1, minimo: 1 })).status).toBe(400);
     const t = await request(app).put('/api/admin/tarifas/Moto%20Express').set(auth(admin.token)).send({ banderazo: 3000, por_km: 800, por_minuto: 0, minimo: 6000 });
     expect(t.body.tarifa).toEqual({ categoria: 'Moto Express', banderazo: 3000, por_km: 800, por_minuto: 0, minimo: 6000 });
     // 3.000 + 34,5 × 800 = 30.600 + recargo 6.000 = 36.600
     const cot3 = await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Casco Urbano', destino: 'Silvania', categoria: 'Moto Express' });
     expect(cot3.body.tarifa_total).toBe(36600);
-    expect((await request(app).put('/api/admin/tarifas/Motocarro').set(auth(cliente.token)).send({})).status).toBe(403);
+    expect((await request(app).put('/api/admin/tarifas/Furgoneta').set(auth(cliente.token)).send({})).status).toBe(403);
 
     // Las cifras públicas reflejan la operación
     const met = await request(app).get('/api/admin/dashboard/metrics').set(auth(admin.token));

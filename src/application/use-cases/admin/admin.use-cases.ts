@@ -13,10 +13,11 @@ import { AuditService } from '../../services/audit.service';
 import { presentarEnvio } from '../../services/envio.presenter';
 import { exigirRol } from '../../services/access';
 import { coordenadasOpcionales, idValido, numeroEnRango, textoOpcional, textoValido } from '../../validation';
+import { aTexto } from '../../../domain/services/texto';
 
 function paginacion(q: { pagina?: unknown; tamano?: unknown }, porDefecto = 15, maximo = 100) {
-  const pagina = Math.max(1, Number.parseInt(String(q.pagina ?? '1'), 10) || 1);
-  const tamano = Math.min(maximo, Math.max(1, Number.parseInt(String(q.tamano ?? porDefecto), 10) || porDefecto));
+  const pagina = Math.max(1, Number.parseInt(aTexto(q.pagina), 10) || 1);
+  const tamano = Math.min(maximo, Math.max(1, Number.parseInt(aTexto(q.tamano), 10) || porDefecto));
   return { pagina, tamano };
 }
 
@@ -36,8 +37,8 @@ export class SearchAuditUseCase {
 
   async execute(actor: Actor, q: { pagina?: unknown; tamano?: unknown; texto?: unknown; accion?: unknown }) {
     exigirRol(actor, ROLES.ADMIN);
-    const pagina = Math.max(1, Number.parseInt(String(q.pagina ?? '1'), 10) || 1);
-    const tamano = Math.min(1000, Math.max(1, Number.parseInt(String(q.tamano ?? '15'), 10) || 15));
+    // Hasta 1000 por página: la exportación a CSV pide el filtro completo de una vez
+    const { pagina, tamano } = paginacion(q, 15, 1000);
     const texto = typeof q.texto === 'string' && q.texto.trim() ? q.texto.trim().slice(0, 100) : undefined;
     const accion = typeof q.accion === 'string' && q.accion.trim() ? q.accion.trim() : undefined;
     const { items, total } = await this.auditoria.search({ pagina, tamano, texto, accion });

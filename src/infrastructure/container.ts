@@ -1,4 +1,4 @@
-import path from 'path';
+import path from 'node:path';
 import { Pool } from 'pg';
 import { config } from '../config';
 import { Logger } from '../shared/logger';
@@ -8,7 +8,10 @@ import { RegisterUserUseCase } from '../application/use-cases/auth/register-user
 import { ListZonesUseCase,
   ListVehicleTariffsUseCase,
   SearchAddressUseCase,
-  ReverseGeocodeUseCase, QuoteShipmentUseCase } from '../application/use-cases/catalog/catalog.use-cases';
+  ReverseGeocodeUseCase,
+  QuoteShipmentUseCase,
+  TraceRouteUseCase,
+} from '../application/use-cases/catalog/catalog.use-cases';
 import { NotificationService } from '../application/services/notification.service';
 import {
   CancelShipmentUseCase,
@@ -59,6 +62,7 @@ import {
   AcceptShipmentUseCase,
   AnnounceScheduledUseCase,
   ArriveDestinationUseCase,
+  ArrivePickupUseCase,
   CompleteStopUseCase,
   PickupShipmentUseCase,
   GetActiveServiceUseCase,
@@ -66,12 +70,13 @@ import {
   GetTrackingUseCase,
   ListAvailableShipmentsUseCase,
   RecordLocationUseCase,
-  StartRouteUseCase,
   UploadEvidenceUseCase,
   ValidateDeliveryUseCase,
 } from '../application/use-cases/shipments/driver-shipments.use-cases';
 import {
+  CheckDocumentExpiryUseCase,
   DecideDriverApprovalUseCase,
+  ReviewDriverDocumentUseCase,
   GetDriverProfileUseCase,
   GetDriverSummaryUseCase,
   ListDriverApplicantsUseCase,
@@ -104,7 +109,7 @@ import {
 import { GetPublicStatsUseCase, ListPublicZonesUseCase, SubmitContactUseCase } from '../application/use-cases/public/public.use-cases';
 import { ContactRepositoryPostgres } from './database/repositories/contact.repository.postgres';
 import { NotificationRepositoryPostgres } from './database/repositories/notification.repository.postgres';
-import { DistancePort, GeocodingPort, PasswordHasherPort, TokenServicePort } from '../domain/ports/services.port';
+import { DistancePort, GeocodingPort, PasswordHasherPort, RoutePort, TokenServicePort } from '../domain/ports/services.port';
 import { StoragePort } from '../domain/ports/storage.port';
 import { AuditRepositoryPostgres } from './database/repositories/audit.repository.postgres';
 import { DocumentoConductorRepositoryPostgres } from './database/repositories/documento-conductor.repository.postgres';
@@ -135,9 +140,18 @@ export interface Dependencias {
   hasher?: PasswordHasherPort;
   distancia?: DistancePort;
   geocodificador?: GeocodingPort;
+  rutas?: RoutePort;
   /** Hora actual (las pruebas la fijan para que el recargo nocturno no dependa del reloj). */
   reloj?: () => Date;
   storage?: StoragePort;
+}
+
+/** Hora actual del servidor (las pruebas inyectan otra). */
+export const horaActual = (): Date => new Date();
+
+/** Manejador que registra como advertencia un fallo que no debe interrumpir la operación. */
+export function avisoDe(log: Logger, contexto: string, mensaje: string): (e: unknown) => void {
+  return (e) => log.child(contexto).warn(mensaje, e);
 }
 
 /** Composición de la aplicación: repositorios, adaptadores y casos de uso. */
@@ -147,6 +161,7 @@ export function crearContenedor(d: Dependencias) {
   const osm = new OpenStreetAdapter();
   const distancia = d.distancia ?? osm;
   const geocodificador = d.geocodificador ?? osm;
+  const rutas = d.rutas ?? osm;
   const storage =
     d.storage ??
     (cloudinaryConfigurado(config.cloudinary) ? new CloudinaryStorage(config.cloudinary) : new LocalDiskStorage(config.uploadsDir, config.publicUrl));
@@ -158,8 +173,8 @@ export function crearContenedor(d: Dependencias) {
   const vehiculos = new VehicleRepositoryPostgres(d.pool);
   const documentos = new DocumentoConductorRepositoryPostgres(d.pool);
   const ubicaciones = new LocationRepositoryPostgres(d.pool);
-  const audit = new AuditService(new AuditRepositoryPostgres(d.pool), (e) => d.log.child('Auditoria').warn('No se pudo registrar la auditoría', e));
-  const reloj = d.reloj ?? (() => new Date());
+  const audit = new AuditService(new AuditRepositoryPostgres(d.pool), avisoDe(d.log, 'Auditoria', 'No se pudo registrar la auditoría'));
+  const reloj = d.reloj ?? horaActual;
   const bus = new EventBusMemoria();
   const tickets = new TicketsEventos();
   const pushRepo = new PushRepositoryPostgres(d.pool);
@@ -170,9 +185,9 @@ export function crearContenedor(d: Dependencias) {
     [new WebPushSender(claves, config.push.vapidContacto), FcmSender.desdeArchivo(config.push.fcmCuentaServicio)].filter(
       (x): x is WebPushSender | FcmSender => x !== null,
     );
-  const push = new PushService(pushRepo, senders, (e) => d.log.child('Push').warn('No se pudo enviar la notificación push', e));
+  const push = new PushService(pushRepo, senders, avisoDe(d.log, 'Push', 'No se pudo enviar la notificación push'));
   const notificacionesRepo = new NotificationRepositoryPostgres(d.pool);
-  const notificaciones = new NotificationService(notificacionesRepo, (e) => d.log.child('Notificaciones').warn('No se pudo crear la notificación', e), {
+  const notificaciones = new NotificationService(notificacionesRepo, avisoDe(d.log, 'Notificaciones', 'No se pudo crear la notificación'), {
     bus,
     push,
   });
@@ -216,6 +231,7 @@ export function crearContenedor(d: Dependencias) {
       tarifas: new ListVehicleTariffsUseCase(tarifas),
       buscarDireccion: new SearchAddressUseCase(geocodificador),
       direccionDe: new ReverseGeocodeUseCase(geocodificador),
+      ruta: new TraceRouteUseCase(rutas),
     },
     envios: {
       crear: new CreateShipmentUseCase(envios, cotizador, audit, paradas, pagos, publicador),
@@ -227,8 +243,8 @@ export function crearContenedor(d: Dependencias) {
       disponibles: new ListAvailableShipmentsUseCase(envios, drivers, vehiculos, paradas, reloj),
       activo: new GetActiveServiceUseCase(envios, drivers),
       aceptar: new AcceptShipmentUseCase(envios, drivers, vehiculos, audit, notificaciones, publicador, pagosRepo),
+      llegadaRecogida: new ArrivePickupUseCase(envios, drivers, notificaciones, reloj),
       recoger: new PickupShipmentUseCase(envios, drivers, storage, audit, notificaciones, reloj),
-      iniciarRuta: new StartRouteUseCase(envios, drivers, audit, notificaciones),
       completarParada: new CompleteStopUseCase(envios, drivers, paradas, notificaciones, reloj),
       llegadaDestino: new ArriveDestinationUseCase(envios, drivers, notificaciones, reloj),
       evidencia: new UploadEvidenceUseCase(envios, drivers, storage),
@@ -258,11 +274,13 @@ export function crearContenedor(d: Dependencias) {
       desuscribir: new UnsubscribePushUseCase(pushRepo),
     },
     conductores: {
-      perfil: new GetDriverProfileUseCase(drivers, vehiculos),
+      perfil: new GetDriverProfileUseCase(drivers, vehiculos, documentos, reloj),
       registrarVehiculo: new RegisterVehicleUseCase(vehiculos, drivers, audit),
-      subirDocumento: new UploadDriverDocumentUseCase(documentos, drivers, storage, audit),
-      postulantes: new ListDriverApplicantsUseCase(drivers),
-      decidir: new DecideDriverApprovalUseCase(drivers, audit, notificaciones),
+      subirDocumento: new UploadDriverDocumentUseCase(documentos, drivers, storage, audit, reloj),
+      postulantes: new ListDriverApplicantsUseCase(drivers, documentos, vehiculos, reloj),
+      decidir: new DecideDriverApprovalUseCase(drivers, audit, notificaciones, documentos, vehiculos, reloj),
+      revisarDocumento: new ReviewDriverDocumentUseCase(documentos, drivers, audit, notificaciones, reloj),
+      vencimientos: new CheckDocumentExpiryUseCase(documentos, drivers, audit, notificaciones, reloj),
       resumen: new GetDriverSummaryUseCase(drivers, envios),
       historial: new ListDriverHistoryUseCase(drivers, envios),
     },

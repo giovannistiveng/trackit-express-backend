@@ -11,7 +11,7 @@ export function idValido(valor: unknown, campo: string): number {
 
 /** Texto recortado con longitud entre min y max, o error 400. */
 export function textoValido(valor: unknown, campo: string, min: number, max: number): string {
-  const t = typeof valor === 'string' ? valor.trim().replace(/\s+/g, ' ') : '';
+  const t = typeof valor === 'string' ? valor.trim().replaceAll(/\s+/g, ' ') : '';
   if (t.length < min || t.length > max) {
     throw new ValidationError(`El campo ${campo} debe tener entre ${min} y ${max} caracteres`);
   }
@@ -22,7 +22,7 @@ export function textoValido(valor: unknown, campo: string, min: number, max: num
 export function textoOpcional(valor: unknown, campo: string, max: number): string | null {
   if (valor === undefined || valor === null) return null;
   if (typeof valor !== 'string') throw new ValidationError(`El campo ${campo} debe ser texto`);
-  const t = valor.trim().replace(/\s+/g, ' ');
+  const t = valor.trim().replaceAll(/\s+/g, ' ');
   if (t.length === 0) return null;
   if (t.length > max) throw new ValidationError(`El campo ${campo} admite máximo ${max} caracteres`);
   return t;
@@ -32,7 +32,7 @@ export function textoOpcional(valor: unknown, campo: string, max: number): strin
 export function telefonoOpcional(valor: unknown): string | null {
   const t = textoOpcional(valor, 'telefono', 20);
   if (t === null) return null;
-  const limpio = t.replace(/[\s-]/g, '');
+  const limpio = t.replaceAll(/[\s-]/g, '');
   if (!/^\+?\d{7,15}$/.test(limpio)) throw new ValidationError('El teléfono debe tener entre 7 y 15 dígitos');
   return limpio;
 }

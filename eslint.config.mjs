@@ -3,9 +3,11 @@ import eslint from '@eslint/js';
 import sonarjs from 'eslint-plugin-sonarjs';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import unicorn from 'eslint-plugin-unicorn';
+import { reglasSonarWay } from './eslint.sonar-way.mjs';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'logs/**', 'uploads/**', 'eslint.config.mjs', 'jest.config.js'] },
+  { ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'logs/**', 'uploads/**', 'eslint.config.mjs', 'eslint.sonar-way.mjs', 'jest.config.js'] },
   {
     files: ['**/*.ts'],
     extends: [eslint.configs.recommended, tseslint.configs.recommended, sonarjs.configs.recommended],
@@ -18,7 +20,9 @@ export default tseslint.config(
       // Igual que SonarQube S7773 y S6544
       'no-restricted-globals': ['error', 'parseInt', 'parseFloat', 'isNaN', 'isFinite'],
       '@typescript-eslint/no-misused-promises': 'error',
+      ...reglasSonarWay,
     },
+    plugins: { unicorn },
   },
   {
     // El CLI de base de datos escribe en la consola a propósito

@@ -2,6 +2,7 @@ import { Actor } from '../../../domain/entities/actor.entity';
 import { NotificationRepositoryPort } from '../../../domain/ports/notification.repository.port';
 import { NotFoundError } from '../../../shared/errors';
 import { idValido } from '../../validation';
+import { aTexto } from '../../../domain/services/texto';
 
 /** Avisos del usuario autenticado, con el total sin leer. */
 export class ListNotificationsUseCase {
@@ -9,7 +10,7 @@ export class ListNotificationsUseCase {
 
   async execute(actor: Actor, q: { no_leidas?: unknown; limite?: unknown } = {}) {
     const soloNoLeidas = q.no_leidas === 'true' || q.no_leidas === true;
-    const limite = Math.min(100, Math.max(1, Number.parseInt(String(q.limite ?? '30'), 10) || 30));
+    const limite = Math.min(100, Math.max(1, Number.parseInt(aTexto(q.limite), 10) || 30));
     const [items, noLeidas] = await Promise.all([this.repo.findByUser(actor.userId, { soloNoLeidas, limite }), this.repo.countUnread(actor.userId)]);
     return {
       no_leidas: noLeidas,

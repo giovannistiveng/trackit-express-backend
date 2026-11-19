@@ -1,0 +1,136 @@
+# Integración continua del backend de TrackIt Express.
+# En cada push y pull request: lint (con reglas Sonar way), tipos, pruebas con cobertura del 100 %
+# contra PostgreSQL real, compilación, imagen Docker y, si está configurado, análisis de SonarQube.
+name: CI backend
+
+on:
+  push:
+    branches: [main, desarrollo, pre-produccion]
+  pull_request:
+    branches: [main, desarrollo, pre-produccion]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Un nuevo push a la misma rama cancela la ejecución anterior
+concurrency:
+  group: ci-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  verificar:
+    name: Lint, pruebas y build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Las pruebas crean y borran su propia base (trackit_test); los pagos usan el modo simulado
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL: "false"
+      TEST_DB_NAME: trackit_test
+      NEQUI_MODO: simulado
+      TZ: America/Bogota
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v5
+        with:
+          # SonarQube necesita el historial completo para atribuir los cambios
+          fetch-depth: 0
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Revisar tipos
+        run: npm run typecheck
+
+      - name: Lint (ESLint + SonarJS + Sonar way)
+        run: npm run lint
+
+      - name: Pruebas con cobertura (umbral 100 %)
+        run: npm run test:coverage -- --coverageReporters=text-summary --coverageReporters=lcov
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Reporte de ESLint para SonarQube
+        if: always()
+        run: npm run lint:sonar || true
+
+      - name: Guardar reportes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-backend
+          path: |
+            coverage/lcov.info
+            reports/eslint.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Solo corre si el repositorio tiene la variable SONAR_HOST_URL y el secreto SONAR_TOKEN.
+      # SONAR_HOST_URL debe ser un servidor accesible desde internet (p. ej. https://sonarcloud.io);
+      # un SonarQube en localhost solo se analiza a mano (ver README).
+      - name: Análisis de SonarQube (con quality gate)
+        if: ${{ vars.SONAR_HOST_URL != '' && github.event_name != 'pull_request' }}
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+        run: >-
+          npm run sonar --
+          -Dsonar.host.url="$SONAR_HOST_URL"
+          -Dsonar.token="$SONAR_TOKEN"
+          ${SONAR_ORGANIZATION:+-Dsonar.organization="$SONAR_ORGANIZATION"}
+          -Dsonar.projectVersion="$(node -p "require('./package.json').version")"
+          -Dsonar.qualitygate.wait=true
+
+  docker:
+    name: Imagen Docker
+    runs-on: ubuntu-latest
+    needs: verificar
+    timeout-minutes: 15
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v5
+
+      - name: Preparar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Se construye para comprobar que el Dockerfile funciona; no se publica en ningún registro
+      - name: Construir la imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: trackit-express-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

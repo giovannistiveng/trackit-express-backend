@@ -1,10 +1,12 @@
 import { Coordenadas } from '../../../domain/entities/shipment.entity';
 import { TarifaVehiculo } from '../../../domain/entities/tarifa-vehiculo.entity';
 import { ZonaTarifa } from '../../../domain/entities/zona-tarifa.entity';
-import { GeocodingPort, SugerenciaDireccion } from '../../../domain/ports/services.port';
+import { VehicleCategory } from '../../../domain/entities/vehicle.entity';
+import { GeocodingPort, RoutePort, RutaTrazada, SugerenciaDireccion } from '../../../domain/ports/services.port';
 import { TarifaVehiculoRepositoryPort } from '../../../domain/ports/tarifa-vehiculo.repository.port';
 import { ZonaTarifaRepositoryPort } from '../../../domain/ports/zona-tarifa.repository.port';
-import { CATEGORIA_POR_DEFECTO, HORA_FIN_NOCHE, HORA_INICIO_NOCHE, RECARGO_NOCTURNO } from '../../../domain/services/tarifas';
+import { TipoServicio } from '../../../domain/services/servicios';
+import { HORA_FIN_NOCHE, HORA_INICIO_NOCHE, RECARGO_NOCTURNO } from '../../../domain/services/tarifas';
 import { DesgloseTarifa } from '../../../domain/services/tarifas';
 import { ValidationError } from '../../../shared/errors';
 import { Cotizador, OpcionVehiculo, SolicitudRuta, TARIFAS_POR_DEFECTO } from '../../services/cotizador';
@@ -83,6 +85,8 @@ export interface QuoteResponse {
   recargo_nocturno_activo: boolean;
   origen_coords: Coordenadas | null;
   destino_coords: Coordenadas | null;
+  tipo_servicio: TipoServicio;
+  vehiculo_minimo: VehicleCategory;
 }
 
 const zonaCorta = (z: ZonaTarifa) => ({ id_zona: z.id_zona as number, nombre_zona: z.nombre_zona });
@@ -100,7 +104,9 @@ export class QuoteShipmentUseCase {
       moneda: 'COP',
       duracion_estimada_min: c.minutos,
       distancia_exacta: c.ruta.exacta !== false,
-      categoria: c.categoria ?? CATEGORIA_POR_DEFECTO,
+      categoria: c.categoria ?? c.vehiculoMinimo,
+      tipo_servicio: c.tipoServicio,
+      vehiculo_minimo: c.vehiculoMinimo,
       zona: zonaCorta(c.zona),
       zona_origen: c.zonaOrigen ? zonaCorta(c.zonaOrigen) : null,
       desglose: c.desglose,
@@ -133,3 +139,25 @@ export class ReverseGeocodeUseCase {
     return this.geo.inversa(punto);
   }
 }
+
+/** Máximo de puntos de una ruta (origen, 3 paradas, destino y regreso). */
+export const MAX_PUNTOS_RUTA = 6;
+
+/** Ruta por calles para dibujar en el mapa. Recibe "lat,lon;lat,lon;…". */
+export class TraceRouteUseCase {
+  constructor(private readonly rutas: RoutePort) {}
+
+  async execute(crudo: unknown): Promise<RutaTrazada> {
+    const texto = typeof crudo === 'string' ? crudo.trim() : '';
+    const partes = texto ? texto.split(';') : [];
+    if (partes.length < 2 || partes.length > MAX_PUNTOS_RUTA) {
+      throw new ValidationError(`Indica entre 2 y ${MAX_PUNTOS_RUTA} puntos con el formato lat,lon;lat,lon`);
+    }
+    const puntos = partes.map((p, i) => {
+      const [lat, lon] = p.split(',');
+      return { lat: numeroEnRango(lat, `puntos[${i}].lat`, -90, 90), lon: numeroEnRango(lon, `puntos[${i}].lon`, -180, 180) };
+    });
+    return this.rutas.trazarRuta(puntos);
+  }
+}
+

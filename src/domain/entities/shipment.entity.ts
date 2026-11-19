@@ -1,4 +1,5 @@
 import type { DesgloseTarifa } from '../services/tarifas';
+import type { DetalleServicio, TipoServicio } from '../services/servicios';
 import { VehicleCategory } from './vehicle.entity';
 
 export type TipoCarga = 'Documentos' | 'Mercancía General' | 'Carga Pesada' | 'Acarreo';
@@ -60,6 +61,16 @@ export interface Envio {
   url_foto_recogida?: string | null;
   fecha_recogida?: Date | null;
   paradas?: Parada[];
+  tipo_servicio?: TipoServicio;
+  detalle_servicio?: DetalleServicio | null;
+  /** Código que quien entrega la carga le da al conductor (paquete, trasteo, insumos). */
+  codigo_recogida?: string | null;
+  llegada_recogida_en?: Date | null;
+  llegada_destino_en?: Date | null;
+  /** Bultos que el conductor contó al recoger. */
+  bultos_recogidos?: number | null;
+  /** Mandado o mercado: valor de la compra según la factura (se paga en efectivo al entregar). */
+  valor_compra?: number | null;
   // Estado actual: se obtiene del último registro en Historial_Estado
   estado?: EstadoEnvio;
 }
@@ -75,6 +86,38 @@ export interface Parada {
   coords: Coordenadas;
   notas?: string | null;
   completada_en?: Date | null;
+}
+
+/**
+ * Etapa visible del servicio. Resume el estado y las marcas de tiempo para que cliente y
+ * conductor vean exactamente el mismo paso.
+ */
+export const ETAPAS = [
+  'buscando_conductor',
+  'yendo_a_recoger',
+  'en_recogida',
+  'en_camino',
+  'regresando',
+  'en_destino',
+  'entregado',
+  'cancelado',
+] as const;
+export type Etapa = (typeof ETAPAS)[number];
+
+export function etapaDe(e: Envio): Etapa {
+  switch (e.estado ?? 'Pendiente') {
+    case 'Pendiente':
+      return 'buscando_conductor';
+    case 'Asignado':
+      return e.llegada_recogida_en ? 'en_recogida' : 'yendo_a_recoger';
+    case 'En Ruta':
+      if (e.llegada_destino_en) return 'en_destino';
+      return e.ida_y_vuelta && e.destino_visitado_en ? 'regresando' : 'en_camino';
+    case 'Entregado':
+      return 'entregado';
+    default:
+      return 'cancelado';
+  }
 }
 
 /** Máximo de paradas intermedias por envío. */

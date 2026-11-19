@@ -1,6 +1,6 @@
 import { CorreoSaliente } from '../../domain/ports/platform.ports';
 
-const escapar = (t: string) => t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+const escapar = (t: string) => t.replaceAll(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
 
 /** Correo con la marca de TrackIt: encabezado naranja, botón y enlace de respaldo. */
 function plantilla(o: { para: string; asunto: string; titulo: string; parrafos: string[]; boton?: { texto: string; url: string }; pie: string }): CorreoSaliente {

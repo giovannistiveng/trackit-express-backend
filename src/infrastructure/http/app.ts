@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express, { Express } from 'express';
 import helmet from 'helmet';
-import path from 'path';
+import path from 'node:path';
 import swaggerUi from 'swagger-ui-express';
 import { config } from '../../config';
 import { frontendLogger, Logger } from '../../shared/logger';
@@ -17,14 +17,24 @@ export interface OpcionesApp {
   contenedor: Contenedor;
   log: Logger;
   /** Verifica la conexión a la base de datos (para /health). */
-  salud?: () => Promise<boolean>;
+  /** Comprueba la base de datos para /health. */
+  salud: () => Promise<boolean>;
 }
 
 /** Crea la aplicación Express sin abrir el puerto (se usa también en las pruebas). */
+/**
+ * ¿Se permite este origen por CORS? Los configurados en CORS_ORIGINS o, sin lista (desarrollo),
+ * cualquiera. Las peticiones sin cabecera Origin (curl, la app móvil) no pasan por CORS.
+ */
+export function origenPermitido(lista: string[], origen: string | undefined): boolean {
+  return lista.length === 0 || !origen || lista.includes(origen);
+}
+
 export function crearApp({ contenedor, log, salud }: OpcionesApp): Express {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  // Proxies delante de la API (Nginx = 1; Caddy + Nginx = 2): así req.ip es la IP real del usuario
+  app.set('trust proxy', config.trustProxy);
 
   app.use(
     helmet({
@@ -45,15 +55,20 @@ export function crearApp({ contenedor, log, salud }: OpcionesApp): Express {
   );
   app.use(
     cors({
-      origin: config.corsOrigins.length > 0 ? config.corsOrigins : true,
+      origin: (origen, responder) => responder(null, origenPermitido(config.corsOrigins, origen)),
       exposedHeaders: ['X-Request-Id'],
     }),
   );
   app.use(express.json({ limit: '200kb' }));
+  // Sin cuerpo (o sin JSON) req.body queda undefined en Express 5: las rutas reciben siempre un objeto
+  app.use((req, _res, next) => {
+    req.body ??= {};
+    next();
+  });
   app.use(requestLogger(log.child('HTTP')));
 
   app.get('/health', async (_req, res) => {
-    const db = salud ? await salud().catch(() => false) : true;
+    const db = await salud().catch(() => false);
     res.status(db ? 200 : 503).json({ status: db ? 'ok' : 'degradado', message: 'TrackIt Express Backend', baseDatos: db ? 'ok' : 'sin conexión' });
   });
 

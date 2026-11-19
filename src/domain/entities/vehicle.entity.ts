@@ -1,4 +1,4 @@
-export const CATEGORIAS_VEHICULO = ['Moto Express', 'Motocarro', 'Camioneta'] as const;
+export const CATEGORIAS_VEHICULO = ['Moto Express', 'Furgoneta'] as const;
 export type VehicleCategory = (typeof CATEGORIAS_VEHICULO)[number];
 
 export interface Vehicle {

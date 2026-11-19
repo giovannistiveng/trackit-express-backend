@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import { Actor, ROLES } from '../../../domain/entities/actor.entity';
 import { ESTADOS_ACTIVOS_CLIENTE, ESTADOS_ENVIO, EstadoEnvio } from '../../../domain/entities/shipment.entity';
 import { coordenadasValidas } from '../../../domain/services/geo';
@@ -15,9 +15,12 @@ import { telefonoOpcional, textoOpcional, textoValido } from '../../validation';
 import { Cotizador, SolicitudRuta } from '../../services/cotizador';
 import { PagosService, PublicadorEnvios, celularNequi, metodoPagoValido } from '../../services/pagos.service';
 import { GetTrackingUseCase } from './driver-shipments.use-cases';
+import { SERVICIOS, generarCodigoRecogida } from '../../../domain/services/servicios';
+import { Etapa, etapaDe } from '../../../domain/entities/shipment.entity';
 
 export interface CreateShipmentInput extends SolicitudRuta {
-  tipo_carga: unknown;
+  /** Opcional: por defecto sale del tipo de servicio. */
+  tipo_carga?: unknown;
   notas?: unknown;
   id_cliente?: unknown;
   metodo_pago?: unknown;
@@ -50,13 +53,17 @@ export class CreateShipmentUseCase {
   async execute(actor: Actor, input: CreateShipmentInput): Promise<EnvioApi> {
     exigirRol(actor, ROLES.CLIENTE);
     exigirMismoId(input.id_cliente, actor.userId, 'id_cliente');
-    const tipoCarga = textoValido(input.tipo_carga, 'tipo_carga', 1, 80);
     const notas = textoOpcional(input.notas, 'notas', 300);
     const metodo = metodoPagoValido(input.metodo_pago);
     const telefonoNequi = metodo === 'nequi' ? celularNequi(input.telefono_nequi) : null;
     const destinatarioNombre = textoOpcional(input.destinatario_nombre, 'destinatario_nombre', 120);
     const destinatarioTelefono = telefonoOpcional(input.destinatario_telefono);
     const c = await this.cotizador.cotizar(input);
+    const servicio = SERVICIOS[c.tipoServicio];
+    const tipoCarga =
+      input.tipo_carga === undefined || input.tipo_carga === null || input.tipo_carga === ''
+        ? servicio.tipoCarga
+        : textoValido(input.tipo_carga, 'tipo_carga', 1, 80);
 
     const envio = await this.envios.create({
       origen: c.origen,
@@ -79,6 +86,9 @@ export class CreateShipmentUseCase {
       destinatario_telefono: destinatarioTelefono,
       fecha_programada: c.fechaProgramada,
       ida_y_vuelta: c.idaYVuelta,
+      tipo_servicio: c.tipoServicio,
+      detalle_servicio: c.detalle,
+      codigo_recogida: servicio.pideCodigoRecogida ? generarCodigoRecogida() : null,
     });
     const id = envio.id_envio as number;
     if (c.paradas.length > 0) await this.paradas.saveAll(id, c.paradas);
@@ -87,7 +97,7 @@ export class CreateShipmentUseCase {
       accion: 'Envío creado',
       entidad: 'Envío',
       idEntidad: id,
-      detalle: `${c.origen} → ${c.destino} · ${c.desglose.total} COP · ${metodo}${c.fechaProgramada ? ' · programado' : ''}`,
+      detalle: `${servicio.nombre}: ${c.origen} → ${c.destino} · ${c.desglose.total} COP · ${metodo}${c.fechaProgramada ? ' · programado' : ''}`,
     });
     await this.publicador.publicar(envio, pago);
     return presentarEnvio({ ...envio, paradas: c.paradas }, { incluirPin: true, pago });
@@ -230,11 +240,11 @@ export class CancelShipmentUseCase {
     const esAdmin = actor.role === ROLES.ADMIN;
     const motivo = esAdmin ? textoValido(motivoCrudo, 'motivo', 3, 255) : textoOpcional(motivoCrudo, 'motivo', 255);
     const envio = await envioExistente(this.envios, id);
-    if (!esAdmin) {
+    if (esAdmin) {
+      exigirEstado(envio, ESTADOS_ACTIVOS_CLIENTE, `El envío ya está ${String(envio.estado).toLowerCase()} y no se puede cancelar`);
+    } else {
       if (envio.id_cliente !== actor.userId) throw new ForbiddenError('Solo puedes cancelar tus propios envíos');
       exigirEstado(envio, ['Pendiente'], 'Solo puedes cancelar un envío mientras ningún conductor lo ha tomado');
-    } else {
-      exigirEstado(envio, ESTADOS_ACTIVOS_CLIENTE, `El envío ya está ${String(envio.estado).toLowerCase()} y no se puede cancelar`);
     }
 
     await this.envios.cancel(envio.id_envio as number, motivo);
@@ -243,7 +253,8 @@ export class CancelShipmentUseCase {
       accion: 'Envío cancelado',
       entidad: 'Envío',
       idEntidad: envio.id_envio,
-      detalle: motivo ?? (esAdmin ? 'Por administración' : 'Por el cliente'),
+      // El motivo es obligatorio para el administrador: solo el cliente cancela sin escribirlo
+      detalle: motivo ?? 'Por el cliente',
     });
 
     const devolucion = TEXTO_DEVOLUCION[pago?.estado ?? ''] ?? '';
@@ -288,6 +299,8 @@ export class EditShipmentUseCase {
 export interface SeguimientoPublico {
   codigo: number;
   estado: string;
+  etapa: Etapa;
+  tipo_servicio: string;
   origen: string;
   destino: string;
   destinatario: string | null;
@@ -326,6 +339,8 @@ export class PublicTrackingUseCase {
     return {
       codigo: id,
       estado: envio.estado ?? 'Pendiente',
+      etapa: etapaDe(envio),
+      tipo_servicio: envio.tipo_servicio ?? 'paquete',
       origen: envio.origen,
       destino: envio.destino,
       destinatario: envio.destinatario_nombre?.split(' ')[0] ?? null,

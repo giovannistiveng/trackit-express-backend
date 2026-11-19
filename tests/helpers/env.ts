@@ -1,6 +1,6 @@
 // Entorno de pruebas: sin consola ni límites de peticiones, logs en una carpeta temporal.
-import os from 'os';
-import path from 'path';
+import os from 'node:os';
+import path from 'node:path';
 
 process.env.NODE_ENV = 'test';
 process.env.RATE_LIMIT_DISABLED = 'true';

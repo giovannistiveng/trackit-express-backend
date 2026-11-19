@@ -10,7 +10,7 @@ import { envioExistente } from '../../services/access';
 import { NotificationService } from '../../services/notification.service';
 
 /** Estados en los que se puede escribir: hay un conductor asignado y el servicio no terminó. */
-const ESTADOS_CHAT_ABIERTO = ['Asignado', 'En Ruta'];
+const ESTADOS_CHAT_ABIERTO = new Set(['Asignado', 'En Ruta']);
 
 interface Participantes {
   envio: Envio;
@@ -23,7 +23,7 @@ async function participantes(envios: ShipmentRepositoryPort, drivers: DriverRepo
   const envio = await envioExistente(envios, id);
   const conductor = envio.id_conductor ? await drivers.findById(envio.id_conductor) : null;
   if (actor.role === ROLES.CLIENTE && envio.id_cliente === actor.userId) return { envio, rol: 'cliente', otro: conductor?.id_usuario ?? null };
-  if (actor.role === ROLES.CONDUCTOR && conductor && conductor.id_usuario === actor.userId) return { envio, rol: 'conductor', otro: envio.id_cliente };
+  if (actor.role === ROLES.CONDUCTOR && conductor?.id_usuario === actor.userId) return { envio, rol: 'conductor', otro: envio.id_cliente };
   if (actor.role === ROLES.ADMIN) return { envio, rol: 'admin', otro: null };
   throw new ForbiddenError('No tienes acceso a este chat');
 }
@@ -44,7 +44,8 @@ function presentar(m: MensajeChat, yo: number) {
 export function sinControles(texto: string): string {
   return [...texto]
     .filter((c) => {
-      const codigo = c.codePointAt(0) ?? 0;
+      // Cada elemento de [...texto] es un carácter completo: siempre tiene código
+      const codigo = c.codePointAt(0) as number;
       return codigo === 9 || codigo === 10 || (codigo >= 32 && codigo !== 127);
     })
     .join('');
@@ -63,7 +64,7 @@ export class ListChatUseCase {
     if (p.rol !== 'admin') await this.chat.markRead(idEnvio, actor.userId);
     const mensajes = await this.chat.findByEnvio(idEnvio, 200);
     return {
-      abierto: ESTADOS_CHAT_ABIERTO.includes(p.envio.estado ?? 'Pendiente') && p.rol !== 'admin',
+      abierto: ESTADOS_CHAT_ABIERTO.has(p.envio.estado ?? 'Pendiente') && p.rol !== 'admin',
       mensajes: mensajes.map((m) => presentar(m, actor.userId)),
     };
   }
@@ -82,7 +83,7 @@ export class SendChatMessageUseCase {
   async execute(actor: Actor, id: unknown, input: { texto?: unknown }) {
     const p = await participantes(this.envios, this.drivers, actor, id);
     if (p.rol === 'admin') throw new ForbiddenError('El administrador no participa en el chat del envío');
-    if (!ESTADOS_CHAT_ABIERTO.includes(p.envio.estado ?? 'Pendiente')) {
+    if (!ESTADOS_CHAT_ABIERTO.has(p.envio.estado ?? 'Pendiente')) {
       throw new ValidationError('El chat está disponible mientras el envío tiene conductor y no ha terminado');
     }
     const texto = typeof input.texto === 'string' ? sinControles(input.texto).trim() : '';

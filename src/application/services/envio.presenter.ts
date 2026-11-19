@@ -1,5 +1,6 @@
 import { DesgloseTarifa } from '../../domain/services/tarifas';
-import { Envio, EnvioDetallado, Parada, gananciaConductor } from '../../domain/entities/shipment.entity';
+import { Envio, EnvioDetallado, Etapa, Parada, etapaDe, gananciaConductor } from '../../domain/entities/shipment.entity';
+import { DetalleServicio } from '../../domain/services/servicios';
 import { Pago } from '../../domain/entities/pago.entity';
 import { presentarPago } from './pagos.service';
 import { HistorialEstadoRow } from '../../domain/ports/shipment.repository.port';
@@ -46,6 +47,18 @@ export interface EnvioApi {
   fecha_recogida?: string | null;
   paradas?: { id_parada?: number; orden: number; direccion: string; coords: { lat: number; lon: number }; notas?: string | null; completada_en: string | null }[];
   chat_no_leidos?: number;
+  tipo_servicio: string;
+  detalle_servicio: DetalleServicio | null;
+  /** Paso del servicio que ven cliente y conductor por igual. */
+  etapa: Etapa;
+  /** El conductor debe pedir el código de recogida a quien entrega la carga. */
+  pide_codigo_recogida: boolean;
+  /** Solo para el cliente dueño. */
+  codigo_recogida?: string | null;
+  llegada_recogida_en: string | null;
+  llegada_destino_en: string | null;
+  bultos_recogidos: number | null;
+  valor_compra: number | null;
 }
 
 export interface OpcionesPresentacion {
@@ -84,6 +97,7 @@ function agregarDatosPrivados(salida: EnvioApi, envio: Envio | EnvioDetallado, o
   }
   if (!o.incluirPin) return;
   salida.token_seguimiento = envio.token_seguimiento ?? null;
+  salida.codigo_recogida = envio.codigo_recogida ?? null;
   if (envio.pin_seguridad) salida.pin_seguridad = envio.pin_seguridad;
 }
 
@@ -133,6 +147,14 @@ export function presentarEnvio(envio: Envio | EnvioDetallado, o: OpcionesPresent
     destino_visitado_en: envio.destino_visitado_en?.toISOString() ?? null,
     url_foto_recogida: envio.url_foto_recogida ?? null,
     fecha_recogida: envio.fecha_recogida?.toISOString() ?? null,
+    tipo_servicio: envio.tipo_servicio ?? 'paquete',
+    detalle_servicio: envio.detalle_servicio ?? null,
+    etapa: etapaDe(envio),
+    pide_codigo_recogida: !!envio.codigo_recogida,
+    llegada_recogida_en: envio.llegada_recogida_en?.toISOString() ?? null,
+    llegada_destino_en: envio.llegada_destino_en?.toISOString() ?? null,
+    bultos_recogidos: envio.bultos_recogidos ?? null,
+    valor_compra: envio.valor_compra ?? null,
   };
   if (envio.paradas) salida.paradas = envio.paradas.map(presentarParada);
   if (o.pago !== undefined) salida.pago = presentarPago(o.pago);

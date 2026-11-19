@@ -1,3 +1,4 @@
+import { FakeDocumentos } from '../helpers/fakes';
 import { AuditService } from '../../src/application/services/audit.service';
 import { presentarEnvio } from '../../src/application/services/envio.presenter';
 import { esContrasenaSegura, idValido, textoValido } from '../../src/application/validation';
@@ -20,7 +21,7 @@ import {
 import { SearchAuditUseCase } from '../../src/application/use-cases/admin/admin.use-cases';
 import { ForbiddenError, UnauthorizedError, ValidationError } from '../../src/shared/errors';
 import { ADMIN, CLIENTE, CONDUCTOR, FakeAuditRepo, FakeDrivers, FakeShipments, FakeVehicles, auditFalso, conductorAprobado, envio, notificacionesFalsas } from '../helpers/fakes';
-import { FakeChat, FakePagos, FakeParadas } from '../helpers/fakes';
+import { FakeChat, FakePagos, FakeParadas, pagosFalsos } from '../helpers/fakes';
 
 const storage = { upload: jest.fn(async () => 'https://cdn/x.jpg') };
 const JPG = { buffer: Buffer.from('x'), mimetype: 'image/jpeg', originalname: 'f.jpg' };
@@ -45,7 +46,8 @@ describe('validación', () => {
 describe('catálogo', () => {
   it('valida la categoría', () => {
     expect(categoriaOpcional('')).toBeNull();
-    expect(categoriaOpcional('Motocarro')).toBe('Motocarro');
+    expect(categoriaOpcional('Furgoneta')).toBe('Furgoneta');
+    expect(() => categoriaOpcional('Camioneta')).toThrow();
     expect(() => categoriaOpcional('Avión')).toThrow(ValidationError);
   });
   it('lista zonas', async () => {
@@ -141,9 +143,10 @@ describe('casos de uso del conductor', () => {
 
   it('crea el perfil de un conductor antiguo al consultarlo', async () => {
     const d2 = new FakeDrivers();
-    const p = await new GetDriverProfileUseCase(d2, new FakeVehicles()).execute(CONDUCTOR);
+    const uc = new GetDriverProfileUseCase(d2, new FakeVehicles(), new FakeDocumentos(), () => new Date());
+    const p = await uc.execute(CONDUCTOR);
     expect(p).toMatchObject({ estado_aprobacion: 'Pendiente', vehiculo: null, motivo_rechazo: null });
-    await expect(new GetDriverProfileUseCase(d2, new FakeVehicles()).execute(CLIENTE)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(uc.execute(CLIENTE)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it('la evidencia exige archivo, tipo de imagen y En Ruta', async () => {
@@ -156,9 +159,11 @@ describe('casos de uso del conductor', () => {
   });
 
   it('la entrega exige PIN', async () => {
-    const uc = new ValidateDeliveryUseCase(s, d, auditFalso().audit, notificacionesFalsas().servicio);
+    const notif = notificacionesFalsas().servicio;
+    const uc = new ValidateDeliveryUseCase(s, d, auditFalso().audit, notif, new FakeParadas(), pagosFalsos(s, d, notif).servicio);
     await expect(uc.execute(CONDUCTOR, 1, { url_foto: 'https://x/y.jpg', pin_seguridad: '' })).rejects.toThrow('El PIN de seguridad es obligatorio');
-    expect((await uc.execute(CONDUCTOR, 1, { url_foto: 'https://x/y.jpg', pin_seguridad: 1234 })).estado).toBe('Entregado');
+    const r = await uc.execute(CONDUCTOR, 1, { url_foto: 'https://x/y.jpg', pin_seguridad: 1234, efectivo_recibido: true });
+    expect(r.estado).toBe('Entregado');
   });
 
   it('la ubicación valida la fecha y el estado del servicio', async () => {
@@ -184,7 +189,7 @@ describe('casos de uso del conductor', () => {
   });
 
   it('subir documento valida tipo de documento, archivo y tipo de archivo', async () => {
-    const uc = new UploadDriverDocumentUseCase({ create: jest.fn(), findByConductor: jest.fn() }, d, storage, auditFalso().audit);
+    const uc = new UploadDriverDocumentUseCase(new FakeDocumentos(), d, storage, auditFalso().audit, () => new Date());
     await expect(uc.execute(CONDUCTOR, { tipo_documento: 'Pasaporte' }, JPG)).rejects.toThrow('Tipo de documento inválido');
     await expect(uc.execute(CONDUCTOR, { tipo_documento: 'SOAT' })).rejects.toThrow('No se proporcionó ningún archivo');
     await expect(uc.execute(CONDUCTOR, { tipo_documento: 'SOAT' }, { ...JPG, mimetype: 'text/plain' })).rejects.toThrow('Solo se permiten imágenes o PDF');
@@ -194,7 +199,14 @@ describe('casos de uso del conductor', () => {
 
 describe('administración', () => {
   it('decidir aprobación valida el id y el booleano', async () => {
-    const uc = new DecideDriverApprovalUseCase(new FakeDrivers(), auditFalso().audit, notificacionesFalsas().servicio);
+    const uc = new DecideDriverApprovalUseCase(
+      new FakeDrivers(),
+      auditFalso().audit,
+      notificacionesFalsas().servicio,
+      new FakeDocumentos(),
+      new FakeVehicles(),
+      () => new Date(),
+    );
     await expect(uc.execute(ADMIN, { driverId: 'x', approved: true })).rejects.toThrow('driverId');
     await expect(uc.execute(ADMIN, { driverId: 1, approved: 'si' })).rejects.toThrow('"approved"');
     await expect(uc.execute(CLIENTE, { driverId: 1, approved: true })).rejects.toBeInstanceOf(ForbiddenError);

@@ -19,7 +19,7 @@ export class RegisterUserUseCase {
     private readonly users: UserRepositoryPort,
     private readonly hasher: PasswordHasherPort,
     private readonly audit: AuditService,
-    private readonly verificacion?: SendVerificationEmailUseCase,
+    private readonly verificacion: SendVerificationEmailUseCase,
   ) {}
 
   async execute(input: RegisterUserInput): Promise<{ id: number; correo: string; nombre: string }> {
@@ -51,7 +51,7 @@ export class RegisterUserUseCase {
       { accion: 'Registro de usuario', entidad: 'Usuario', idEntidad: user.id, detalle: idRol === ROLES.CONDUCTOR ? 'Conductor' : 'Cliente' },
     );
     // El correo de verificación nunca impide el registro
-    await this.verificacion?.enviarA(user).catch(() => undefined);
+    await this.verificacion.enviarA(user).catch(() => undefined);
     return { id: user.id as number, correo: user.correo, nombre: user.nombre };
   }
 }

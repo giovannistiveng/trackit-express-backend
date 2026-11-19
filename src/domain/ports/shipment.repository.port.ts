@@ -49,12 +49,16 @@ export interface ShipmentRepositoryPort {
    * Pendientes sin conductor, con el pago garantizado y (si son programados) a menos de una hora.
    * Con `categorias`, solo los de esas categorías o sin categoría.
    */
-  findAvailable(categorias?: VehicleCategory[], ahora?: Date): Promise<Envio[]>;
+  findAvailable(categorias: VehicleCategory[], ahora: Date): Promise<Envio[]>;
   /** Envío por el token del enlace público de seguimiento. */
   findByToken(token: string): Promise<Envio | null>;
   updateDetalles(id_envio: number, d: DetallesEditables): Promise<void>;
-  /** Guarda la foto de recogida y pasa el envío a En Ruta (transacción). */
-  registerPickup(id_envio: number, url_foto: string, ahora: Date): Promise<void>;
+  /** Guarda la foto de recogida (y los bultos contados y el valor de la compra) y pasa el envío a En Ruta. */
+  registerPickup(id_envio: number, url_foto: string, ahora: Date, datos: DatosRecogida): Promise<void>;
+  /** El conductor llegó al punto de recogida (solo la primera vez). */
+  markPickupArrival(id_envio: number, ahora: Date): Promise<void>;
+  /** El conductor llegó al punto de entrega final (solo la primera vez). */
+  markDestinationArrival(id_envio: number, ahora: Date): Promise<void>;
   markDestinationVisited(id_envio: number, ahora: Date): Promise<void>;
   /** Programados que ya entran al tablero y todavía no se anunciaron a los conductores. */
   findScheduledToAnnounce(ahora: Date): Promise<Envio[]>;
@@ -70,7 +74,7 @@ export interface ShipmentRepositoryPort {
 
   // Calificación (RF10)
   findCalification(id_envio: number): Promise<number | null>;
-  saveCalification(id_envio: number, puntuacion: number, comentario?: string | null): Promise<void>;
+  saveCalification(id_envio: number, puntuacion: number, comentario: string | null): Promise<void>;
 
   /** Cancela el envío (registra el estado y el motivo). Falla si ya está en un estado final. */
   cancel(id_envio: number, motivo: string | null): Promise<void>;
@@ -78,4 +82,9 @@ export interface ShipmentRepositoryPort {
   findDriverHistory(id_conductor: number, limite: number): Promise<EnvioDetallado[]>;
   driverSummary(id_conductor: number): Promise<ResumenConductor>;
   searchAdmin(f: FiltroEnviosAdmin): Promise<{ items: EnvioAdmin[]; total: number }>;
+}
+
+export interface DatosRecogida {
+  bultos?: number | null;
+  valor_compra?: number | null;
 }

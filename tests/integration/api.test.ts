@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { Express } from 'express';
 import { pool } from '../../src/config/database';
-import { crearAppPrueba, hayBaseDeDatos, reiniciarBase, sesion, sesionAdmin } from '../helpers/app';
+import { UN_ANO, aprobarConductor, crearAppPrueba, hayBaseDeDatos, reiniciarBase, sesion, sesionAdmin } from '../helpers/app';
 
 const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 let disponible = false;
@@ -45,7 +45,7 @@ describe('Sistema y documentación', () => {
     const spec = await request(app).get('/api/docs.json');
     expect(spec.body.openapi).toBe('3.0.3');
     expect(Object.keys(spec.body.paths)).toEqual(
-      expect.arrayContaining(['/api/conductores/me', '/api/zonas', '/api/clientes/envios', '/api/admin/auditoria', '/api/envios/{id}/iniciar-ruta', '/api/envios/{id}/seguimiento', '/api/envios/{id}/cancelar', '/api/notificaciones', '/api/usuarios/me', '/api/publico/estadisticas', '/api/admin/envios']),
+      expect.arrayContaining(['/api/conductores/me', '/api/zonas', '/api/clientes/envios', '/api/admin/auditoria', '/api/envios/{id}/recogida', '/api/envios/{id}/seguimiento', '/api/envios/{id}/cancelar', '/api/notificaciones', '/api/usuarios/me', '/api/publico/estadisticas', '/api/admin/envios']),
     );
   });
 
@@ -65,7 +65,10 @@ describe('Autenticación y roles', () => {
     const { token } = await sesion(app, 'cond-a@t.co', 3, 'Camilo Rojas');
     const me = await request(app).get('/api/conductores/me').set(auth(token));
     expect(me.status).toBe(200);
-    expect(me.body).toEqual({ id_conductor: expect.any(Number), estado_aprobacion: 'Pendiente', motivo_rechazo: null, vehiculo: null });
+    expect(me.body).toMatchObject({ id_conductor: expect.any(Number), estado_aprobacion: 'Pendiente', motivo_rechazo: null, vehiculo: null });
+    expect(me.body.requisitos.completo).toBe(false);
+    expect(me.body.requisitos.pendientes).toEqual(expect.arrayContaining(['Registra tu vehículo', 'Sube: Cédula de ciudadanía', 'Sube: SOAT']));
+    expect(me.body.requisitos.items).toHaveLength(7);
   });
 
   conBd('rechaza correo duplicado, contraseña débil y el rol Administrador', async () => {
@@ -123,8 +126,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     });
     expect(cot.body.opciones).toEqual([
       { categoria: 'Moto Express', tarifa_total: 31600, minimo_aplicado: false },
-      { categoria: 'Motocarro', tarifa_total: 44300, minimo_aplicado: false },
-      { categoria: 'Camioneta', tarifa_total: 75500, minimo_aplicado: false },
+      { categoria: 'Furgoneta', tarifa_total: 86500, minimo_aplicado: false },
     ]);
     expect((await request(app).post('/api/cotizar/cotizar').set(auth(cliente.token)).send({ origen: 'Pasca', destino: 'pasca', id_zona: 1 })).status).toBe(400);
     const fuera = await request(app)
@@ -167,10 +169,10 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     const veh = await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: ' abc-12d ', categoria: 'Moto Express' });
     expect(veh.status).toBe(201);
     expect(veh.body.vehicle).toMatchObject({ placa: 'ABC12D', categoria: 'Moto Express' });
-    expect((await request(app).post('/api/vehicles/register').set(auth(otroConductor.token)).send({ placa: 'ABC12D', categoria: 'Camioneta' })).body.error).toBe(
+    expect((await request(app).post('/api/vehicles/register').set(auth(otroConductor.token)).send({ placa: 'ABC12D', categoria: 'Furgoneta' })).body.error).toBe(
       'La placa ya está registrada',
     );
-    expect((await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: 'AB1234', categoria: 'Camioneta' })).status).toBe(400);
+    expect((await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: 'AB1234', categoria: 'Furgoneta' })).status).toBe(400);
     const doc = await request(app).post('/api/documentos/upload').set(auth(conductor.token)).field('tipo_documento', 'Cédula').attach('archivo', JPG, { filename: 'c.jpg', contentType: 'image/jpeg' });
     expect(doc.status).toBe(201);
     expect(doc.body.documento.url_archivo).toMatch(/^http:\/\/localhost:3000\/uploads\/trackit\/documentos\/\d+\/.+\.jpg$/);
@@ -182,12 +184,17 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     // Aprobación (CU-011): pendientes con documentos, rechazo con motivo y aprobación
     const pend = await request(app).get('/api/conductores/pendientes').set(auth(admin.token));
     const yo = pend.body.find((p: { correo: string }) => p.correo === 'conductor@t.co');
-    expect(yo.documentos).toEqual([{ tipo_documento: 'Cédula', url_archivo: doc.body.documento.url_archivo }]);
+    expect(yo.documentos).toEqual([expect.objectContaining({ tipo_documento: 'Cédula', url_archivo: doc.body.documento.url_archivo, estado: 'Pendiente' })]);
+    expect(yo.vehiculo).toEqual({ placa: 'ABC12D', categoria: 'Moto Express' });
+    expect(yo.consultas.length).toBeGreaterThan(0);
+    // No se aprueba sin los requisitos completos
+    const incompleto = await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: yo.id_conductor, approved: true });
+    expect(incompleto.body.error).toMatch(/^Aún no se puede aprobar: .*En revisión: Cédula de ciudadanía.*Sube: Selfie con la cédula/);
     expect((await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: yo.id_conductor, approved: false })).status).toBe(400);
     const rechazo = await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: yo.id_conductor, approved: false, observation: 'Falta el SOAT' });
     expect(rechazo.body.driver).toMatchObject({ estado_aprobacion: 'Rechazado', motivo_rechazo: 'Falta el SOAT' });
     expect((await request(app).get('/api/conductores/me').set(auth(conductor.token))).body.motivo_rechazo).toBe('Falta el SOAT');
-    const aprob = await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: yo.id_conductor, approved: true });
+    const aprob = await aprobarConductor(app, conductor.token, admin.token, yo.id_conductor);
     expect(aprob.body.driver.estado_aprobacion).toBe('Aprobado');
     expect((await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: yo.id_conductor, approved: true })).body.error).toBe(
       'Este conductor ya ha sido aprobado previamente',
@@ -225,17 +232,14 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
       'Inicia la ruta antes de validar la entrega',
     );
 
-    // Iniciar ruta y ubicación (CU-008)
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(otroConductor.token))).status).toBe(403);
-    // Sin la foto de recogida no se inicia la ruta
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(conductor.token))).body.error).toBe(
-      'Toma la foto del paquete al recogerlo para iniciar la ruta',
-    );
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token))).body.error).toBe('Toma la foto del paquete al recogerlo');
-    const ruta = await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
+    // Recogida y ubicación (CU-008): solo el conductor asignado, con la foto de la carga
+    expect(
+      (await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(otroConductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' })).status,
+    ).toBe(403);
+    expect((await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token))).body.error).toBe('Toma la foto de la carga al recogerla');
+    const ruta = await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).field('codigo_recogida', String(envio.codigo_recogida)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' });
     expect(ruta.body.envio).toMatchObject({ estado: 'En Ruta', url_foto_recogida: expect.stringMatching(/\/uploads\/trackit\/recogidas\//) });
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/iniciar-ruta`).set(auth(conductor.token))).status).toBe(400);
-    expect((await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' })).status).toBe(400);
+    expect((await request(app).post(`/api/envios/${envio.id_envio}/recogida`).set(auth(conductor.token)).field('codigo_recogida', String(envio.codigo_recogida)).attach('archivo', JPG, { filename: 'r.jpg', contentType: 'image/jpeg' })).status).toBe(400);
     const ub = { lat: 4.3369, lon: -74.3638, capturado_en: '2026-10-29T15:00:00.000Z' };
     expect((await request(app).post(`/api/envios/${envio.id_envio}/ubicacion`).set(auth(conductor.token)).send(ub)).status).toBe(201);
     expect((await request(app).post(`/api/envios/${envio.id_envio}/ubicacion`).set(auth(conductor.token)).send(ub)).status).toBe(201); // duplicado ignorado
@@ -297,7 +301,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     const filtro = await request(app).get('/api/admin/auditoria?accion=Entrega%20validada').set(auth(admin.token));
     expect(filtro.body.items).toEqual([expect.objectContaining({ usuario: 'conductor@t.co', accion: 'Entrega validada', entidad: 'Envío' })]);
     const texto = await request(app).get('/api/admin/auditoria?texto=SOAT&pagina=1').set(auth(admin.token));
-    expect(texto.body.items[0].accion).toBe('Conductor rechazado');
+    expect(texto.body.items.map((i: { accion: string }) => i.accion)).toContain('Conductor rechazado');
     const lejos = await request(app).get('/api/admin/auditoria?pagina=99&tamano=50').set(auth(admin.token));
     expect(lejos.body.items).toEqual([]);
     expect(lejos.body.total).toBeGreaterThan(10);
@@ -310,13 +314,13 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     const admin = await sesionAdmin(app);
     const me = (await request(app).get('/api/conductores/me').set(auth(conductor.token))).body;
     const meCam = (await request(app).get('/api/conductores/me').set(auth(camionero.token))).body;
-    await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: me.id_conductor, approved: true });
-    await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: meCam.id_conductor, approved: true });
     await request(app).post('/api/vehicles/register').set(auth(conductor.token)).send({ placa: 'XYZ123', categoria: 'Moto Express' });
-    await request(app).post('/api/vehicles/register').set(auth(camionero.token)).send({ placa: 'CAM456', categoria: 'Camioneta' });
+    await request(app).post('/api/vehicles/register').set(auth(camionero.token)).send({ placa: 'CAM456', categoria: 'Furgoneta' });
+    await aprobarConductor(app, conductor.token, admin.token, me.id_conductor);
+    await aprobarConductor(app, camionero.token, admin.token, meCam.id_conductor);
     const crear = (categoria?: string) =>
       request(app).post('/api/envios/crear').set(auth(cliente.token)).send({ origen: 'Casco', destino: 'Pasca', tipo_carga: 'Documentos', ...(categoria ? { categoria } : {}) });
-    const grande = (await crear('Camioneta')).body.envio;
+    const grande = (await crear('Furgoneta')).body.envio;
     const moto = (await crear('Moto Express')).body.envio;
     const libre = (await crear()).body.envio;
     const ver = async (token: string) =>
@@ -325,7 +329,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     expect(ids).toEqual(expect.arrayContaining([libre.id_envio, moto.id_envio]));
     expect(ids).not.toContain(grande.id_envio);
     expect(await ver(camionero.token)).toEqual(expect.arrayContaining([libre.id_envio, moto.id_envio, grande.id_envio]));
-    expect((await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: grande.id_envio })).body.error).toBe('Este envío requiere un vehículo Camioneta');
+    expect((await request(app).post('/api/envios/aceptar').set(auth(conductor.token)).send({ id_envio: grande.id_envio })).body.error).toBe('Este envío requiere un vehículo Furgoneta');
     // Los conductores aprobados reciben el aviso de servicio nuevo
     const avisos = (await request(app).get('/api/notificaciones').set(auth(camionero.token))).body.items;
     expect(avisos.some((n: { tipo: string; id_envio: number }) => n.tipo === 'nuevo_servicio' && n.id_envio === grande.id_envio)).toBe(true);
@@ -338,7 +342,7 @@ describe('Flujo completo: cliente → conductor → entrega → calificación �
     const admin = await sesionAdmin(app);
     const me = (await request(app).get('/api/conductores/me').set(auth(conductor.token))).body;
     await request(app).post('/api/conductores/aprobar').set(auth(admin.token)).send({ driverId: me.id_conductor, approved: false, observation: 'Licencia ilegible' });
-    await request(app).post('/api/documentos/upload').set(auth(conductor.token)).field('tipo_documento', 'Licencia').attach('archivo', JPG, { filename: 'l.png', contentType: 'image/png' });
+    await request(app).post('/api/documentos/upload').set(auth(conductor.token)).field('tipo_documento', 'Licencia').field('fecha_vencimiento', UN_ANO).attach('archivo', JPG, { filename: 'l.png', contentType: 'image/png' });
     const despues = (await request(app).get('/api/conductores/me').set(auth(conductor.token))).body;
     expect(despues).toMatchObject({ estado_aprobacion: 'Pendiente', motivo_rechazo: null });
   });

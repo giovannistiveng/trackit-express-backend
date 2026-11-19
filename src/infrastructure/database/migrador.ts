@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from 'fs';
-import path from 'path';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 
 /** Lo mínimo que el migrador necesita de un pool de PostgreSQL. */
 export interface EjecutorSql {

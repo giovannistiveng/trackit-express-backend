@@ -20,23 +20,23 @@ export function crearRutasApi(c: Contenedor): Router {
 
   // --- Autenticación (públicas) ---
   r.post('/auth/register', rateLimit(20, 60_000), async (req: Request, res: Response) => {
-    const user = await c.auth.registrar.execute(req.body ?? {});
+    const user = await c.auth.registrar.execute(req.body);
     res.status(201).json({ message: 'Usuario registrado exitosamente', user });
   });
   r.post('/auth/login', rateLimit(10, 60_000), async (req: Request, res: Response) => {
-    const result = await c.auth.login.execute(req.body ?? {});
+    const result = await c.auth.login.execute(req.body);
     res.status(200).json({ message: 'Inicio de sesión exitoso', ...result });
   });
   r.post('/auth/olvide-password', rateLimit(5, 60_000), async (req: Request, res: Response) => {
-    await c.auth.olvidePassword.execute(req.body ?? {});
+    await c.auth.olvidePassword.execute(req.body);
     res.json({ message: 'Si el correo está registrado, te enviamos un enlace para restablecer la contraseña.' });
   });
   r.post('/auth/restablecer-password', rateLimit(10, 60_000), async (req: Request, res: Response) => {
-    await c.auth.restablecerPassword.execute(req.body ?? {});
+    await c.auth.restablecerPassword.execute(req.body);
     res.json({ message: 'Contraseña actualizada. Ya puedes iniciar sesión.' });
   });
   r.post('/auth/verificar-correo', rateLimit(20, 60_000), async (req: Request, res: Response) => {
-    res.json({ message: 'Correo verificado', ...(await c.auth.verificarCorreo.execute(req.body ?? {})) });
+    res.json({ message: 'Correo verificado', ...(await c.auth.verificarCorreo.execute(req.body)) });
   });
 
   // --- Sitio público (sin sesión) ---
@@ -54,7 +54,7 @@ export function crearRutasApi(c: Contenedor): Router {
     res.json(await c.envios.seguimientoPublico.execute(req.params.token));
   });
   r.post('/contacto', rateLimit(5, 60_000), async (req: Request, res: Response) => {
-    const r2 = await c.publico.contacto.execute(req.body ?? {});
+    const r2 = await c.publico.contacto.execute(req.body);
     res.status(201).json({ message: 'Recibimos tu mensaje. Te responderemos pronto.', ...r2 });
   });
 
@@ -63,10 +63,10 @@ export function crearRutasApi(c: Contenedor): Router {
     res.json(await c.usuarios.perfil.execute(actorDe(req)));
   });
   r.patch('/usuarios/me', auth, async (req: Request, res: Response) => {
-    res.json({ message: 'Perfil actualizado', usuario: await c.usuarios.actualizar.execute(actorDe(req), req.body ?? {}) });
+    res.json({ message: 'Perfil actualizado', usuario: await c.usuarios.actualizar.execute(actorDe(req), req.body) });
   });
   r.post('/usuarios/me/password', auth, rateLimit(10, 60_000), async (req: Request, res: Response) => {
-    await c.usuarios.cambiarPassword.execute(actorDe(req), req.body ?? {});
+    await c.usuarios.cambiarPassword.execute(actorDe(req), req.body);
     res.json({ message: 'Contraseña actualizada' });
   });
   r.post('/usuarios/me/verificacion', auth, rateLimit(3, 60_000), async (req: Request, res: Response) => {
@@ -105,11 +105,11 @@ export function crearRutasApi(c: Contenedor): Router {
     res.json({ clave: c.clavePush || null });
   });
   r.post('/push/suscripciones', auth, rateLimit(20, 60_000), async (req: Request, res: Response) => {
-    await c.push.suscribir.execute(actorDe(req), req.body ?? {});
+    await c.push.suscribir.execute(actorDe(req), req.body);
     res.status(201).json({ message: 'Notificaciones activadas en este dispositivo' });
   });
   r.delete('/push/suscripciones', auth, async (req: Request, res: Response) => {
-    await c.push.desuscribir.execute(actorDe(req), req.body ?? {});
+    await c.push.desuscribir.execute(actorDe(req), req.body);
     res.status(204).end();
   });
 
@@ -145,14 +145,18 @@ export function crearRutasApi(c: Contenedor): Router {
   r.get('/geo/inversa', auth, rateLimit(30, 60_000), async (req: Request, res: Response) => {
     res.json({ resultado: await c.catalogo.direccionDe.execute(req.query.lat, req.query.lon) });
   });
+  // Sin sesión: también la usa el enlace público de seguimiento
+  r.get('/geo/ruta', rateLimit(40, 60_000), async (req: Request, res: Response) => {
+    res.json(await c.catalogo.ruta.execute(req.query.puntos));
+  });
   r.post('/cotizar/cotizar', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
-    const cotizacion = await c.catalogo.cotizar.execute(req.body ?? {});
+    const cotizacion = await c.catalogo.cotizar.execute(req.body);
     res.json({ message: 'Tarifa calculada exitosamente', ...cotizacion });
   });
 
   // --- Envíos (cliente) ---
   r.post('/envios/crear', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
-    const envio = await c.envios.crear.execute(actorDe(req), req.body ?? {});
+    const envio = await c.envios.crear.execute(actorDe(req), req.body);
     res.status(201).json({ message: 'Solicitud de envío creada exitosamente', envio });
   });
   r.get('/clientes/envios', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
@@ -164,10 +168,10 @@ export function crearRutasApi(c: Contenedor): Router {
     res.json({ message: 'Calificación registrada exitosamente', envio });
   });
   r.patch('/envios/:id', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
-    res.json({ message: 'Envío actualizado', envio: await c.envios.editar.execute(actorDe(req), req.params.id, req.body ?? {}) });
+    res.json({ message: 'Envío actualizado', envio: await c.envios.editar.execute(actorDe(req), req.params.id, req.body) });
   });
   r.post('/envios/:id/pago/reintentar', auth, autorizar(CLIENTE), rateLimit(10, 60_000), async (req: Request, res: Response) => {
-    res.json({ message: 'Te enviamos el cobro a Nequi', pago: await c.pagos.reintentar.execute(actorDe(req), req.params.id, req.body ?? {}) });
+    res.json({ message: 'Te enviamos el cobro a Nequi', pago: await c.pagos.reintentar.execute(actorDe(req), req.params.id, req.body) });
   });
   r.post('/envios/:id/pago/efectivo', auth, autorizar(CLIENTE), async (req: Request, res: Response) => {
     res.json({ message: 'Pagarás en efectivo al conductor', pago: await c.pagos.efectivo.execute(actorDe(req), req.params.id) });
@@ -179,15 +183,15 @@ export function crearRutasApi(c: Contenedor): Router {
 
   // --- Envíos (conductor) ---
   r.post('/envios/aceptar', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
-    const envio = await c.envios.aceptar.execute(actorDe(req), req.body ?? {});
+    const envio = await c.envios.aceptar.execute(actorDe(req), req.body);
     res.json({ message: 'Servicio asignado exitosamente', envio });
   });
-  r.post('/envios/:id/iniciar-ruta', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
-    const envio = await c.envios.iniciarRuta.execute(actorDe(req), req.params.id);
-    res.json({ message: 'Ruta iniciada', envio });
+  r.post('/envios/:id/llegada-recogida', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
+    res.json({ message: 'Llegada a recoger registrada', envio: await c.envios.llegadaRecogida.execute(actorDe(req), req.params.id) });
   });
   r.post('/envios/:id/recogida', auth, autorizar(CONDUCTOR), subirArchivo(TIPOS_FOTO), async (req: Request, res: Response) => {
-    res.json({ message: 'Paquete recogido, ruta iniciada', envio: await c.envios.recoger.execute(actorDe(req), req.params.id, archivoDe(req)) });
+    const envio = await c.envios.recoger.execute(actorDe(req), req.params.id, archivoDe(req), req.body);
+    res.json({ message: 'Carga recogida, ruta iniciada', envio });
   });
   r.post('/envios/:id/paradas/:idParada/completar', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
     res.json(await c.envios.completarParada.execute(actorDe(req), req.params.id, req.params.idParada));
@@ -200,11 +204,11 @@ export function crearRutasApi(c: Contenedor): Router {
     res.status(201).json(resultado);
   });
   r.post('/envios/:id/validar-entrega', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
-    const envio = await c.envios.validarEntrega.execute(actorDe(req), req.params.id, req.body ?? {});
+    const envio = await c.envios.validarEntrega.execute(actorDe(req), req.params.id, req.body);
     res.json({ message: 'Validación de entrega exitosa', envio });
   });
   r.post('/envios/:id/ubicacion', auth, autorizar(CONDUCTOR), rateLimit(120, 60_000), async (req: Request, res: Response) => {
-    await c.envios.registrarUbicacion.execute(actorDe(req), req.params.id, req.body ?? {});
+    await c.envios.registrarUbicacion.execute(actorDe(req), req.params.id, req.body);
     res.status(201).json({ message: 'Ubicación registrada' });
   });
 
@@ -219,7 +223,7 @@ export function crearRutasApi(c: Contenedor): Router {
     res.json(await c.envios.chat.execute(actorDe(req), req.params.id));
   });
   r.post('/envios/:id/mensajes', auth, autorizar(CLIENTE, CONDUCTOR), rateLimit(30, 60_000), async (req: Request, res: Response) => {
-    res.status(201).json(await c.envios.enviarMensaje.execute(actorDe(req), req.params.id, req.body ?? {}));
+    res.status(201).json(await c.envios.enviarMensaje.execute(actorDe(req), req.params.id, req.body));
   });
   r.get('/envios/:id/seguimiento', auth, async (req: Request, res: Response) => {
     res.json(await c.envios.seguimiento.execute(actorDe(req), req.params.id));
@@ -249,11 +253,11 @@ export function crearRutasApi(c: Contenedor): Router {
     res.json({ envio: await c.envios.activo.execute(actorDe(req)) });
   });
   r.post('/vehicles/register', auth, autorizar(CONDUCTOR), async (req: Request, res: Response) => {
-    const vehicle = await c.conductores.registrarVehiculo.execute(actorDe(req), req.body ?? {});
+    const vehicle = await c.conductores.registrarVehiculo.execute(actorDe(req), req.body);
     res.status(201).json({ message: 'Vehículo registrado exitosamente', vehicle });
   });
   r.post('/documentos/upload', auth, autorizar(CONDUCTOR), subirArchivo(TIPOS_ARCHIVO_DOCUMENTO), async (req: Request, res: Response) => {
-    const documento = await c.conductores.subirDocumento.execute(actorDe(req), req.body ?? {}, archivoDe(req));
+    const documento = await c.conductores.subirDocumento.execute(actorDe(req), req.body, archivoDe(req));
     res.status(201).json({ message: 'Documento subido exitosamente', documento });
   });
 
@@ -261,8 +265,12 @@ export function crearRutasApi(c: Contenedor): Router {
   r.get('/conductores/pendientes', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     res.json(await c.conductores.postulantes.execute(actorDe(req)));
   });
+  r.patch('/admin/documentos/:id', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
+    const documento = await c.conductores.revisarDocumento.execute(actorDe(req), req.params.id, req.body);
+    res.json({ message: documento.estado === 'Aprobado' ? 'Documento aprobado' : 'Documento rechazado', documento });
+  });
   r.post('/conductores/aprobar', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
-    const driver = await c.conductores.decidir.execute(actorDe(req), req.body ?? {});
+    const driver = await c.conductores.decidir.execute(actorDe(req), req.body);
     res.json({ message: driver.estado_aprobacion === 'Aprobado' ? 'Conductor aprobado exitosamente' : 'Conductor rechazado exitosamente', driver });
   });
   r.get('/admin/dashboard/metrics', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
@@ -278,13 +286,13 @@ export function crearRutasApi(c: Contenedor): Router {
     res.json(await c.admin.zonas.execute(actorDe(req)));
   });
   r.post('/admin/zonas', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
-    res.status(201).json({ message: 'Zona creada', zona: await c.admin.crearZona.execute(actorDe(req), req.body ?? {}) });
+    res.status(201).json({ message: 'Zona creada', zona: await c.admin.crearZona.execute(actorDe(req), req.body) });
   });
   r.put('/admin/tarifas/:categoria', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
-    res.json({ message: 'Tarifa actualizada', tarifa: await c.admin.tarifaVehiculo.execute(actorDe(req), req.params.categoria, req.body ?? {}) });
+    res.json({ message: 'Tarifa actualizada', tarifa: await c.admin.tarifaVehiculo.execute(actorDe(req), req.params.categoria, req.body) });
   });
   r.put('/admin/zonas/:id', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
-    res.json({ message: 'Zona actualizada', zona: await c.admin.tarifa.execute(actorDe(req), req.params.id, req.body ?? {}) });
+    res.json({ message: 'Zona actualizada', zona: await c.admin.tarifa.execute(actorDe(req), req.params.id, req.body) });
   });
   r.delete('/admin/zonas/:id', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     const r2 = await c.admin.borrarZona.execute(actorDe(req), req.params.id);
@@ -300,11 +308,11 @@ export function crearRutasApi(c: Contenedor): Router {
     res.json(await c.pagos.liquidaciones.execute(actorDe(req), req.query));
   });
   r.post('/admin/liquidaciones/generar', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
-    const creadas = await c.pagos.generarLiquidaciones.execute(actorDe(req), req.body ?? {});
+    const creadas = await c.pagos.generarLiquidaciones.execute(actorDe(req), req.body);
     res.status(201).json({ message: creadas.length ? `Se generaron ${creadas.length} liquidaciones` : 'No hay entregas pendientes por liquidar', liquidaciones: creadas });
   });
   r.post('/admin/liquidaciones/:id/pagar', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
-    res.json({ message: 'Liquidación pagada', liquidacion: await c.pagos.pagarLiquidacion.execute(actorDe(req), req.params.id, req.body ?? {}) });
+    res.json({ message: 'Liquidación pagada', liquidacion: await c.pagos.pagarLiquidacion.execute(actorDe(req), req.params.id, req.body) });
   });
   r.get('/admin/contactos', auth, autorizar(ADMIN), async (req: Request, res: Response) => {
     res.json(await c.admin.contactos.execute(actorDe(req), req.query));

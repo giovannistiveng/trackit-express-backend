@@ -2,7 +2,9 @@ import { Actor } from '../../src/domain/entities/actor.entity';
 import { Conductor } from '../../src/domain/entities/driver.entity';
 import { Envio, EnvioDetallado, EstadoEnvio } from '../../src/domain/entities/shipment.entity';
 import { Vehicle } from '../../src/domain/entities/vehicle.entity';
-import { DriverRepositoryPort, ConductorPostulante } from '../../src/domain/ports/driver.repository.port';
+import { DocumentoConductor } from '../../src/domain/entities/documento-conductor.entity';
+import { DocumentoConductorRepositoryPort, RevisionDocumento } from '../../src/domain/ports/documento-conductor.repository.port';
+import { DriverRepositoryPort } from '../../src/domain/ports/driver.repository.port';
 import { ShipmentRepositoryPort, HistorialEstadoRow, EnvioAdmin } from '../../src/domain/ports/shipment.repository.port';
 import { NotificationRepositoryPort } from '../../src/domain/ports/notification.repository.port';
 import { Notificacion } from '../../src/domain/entities/notificacion.entity';
@@ -81,8 +83,25 @@ export class FakeShipments implements ShipmentRepositoryPort {
   async updateDetalles(id: number, d: Partial<Envio>) {
     this.envios.set(id, { ...(this.envios.get(id) as Envio), ...d });
   }
-  async registerPickup(id: number, url: string, ahora: Date) {
-    this.envios.set(id, { ...(this.envios.get(id) as Envio), url_foto_recogida: url, fecha_recogida: ahora, estado: 'En Ruta' });
+  async registerPickup(id: number, url: string, ahora: Date, datos: { bultos?: number | null; valor_compra?: number | null } = {}) {
+    const e = this.envios.get(id) as Envio;
+    this.envios.set(id, {
+      ...e,
+      url_foto_recogida: url,
+      fecha_recogida: ahora,
+      llegada_recogida_en: e.llegada_recogida_en ?? ahora,
+      bultos_recogidos: datos.bultos ?? null,
+      valor_compra: datos.valor_compra ?? null,
+      estado: 'En Ruta',
+    });
+  }
+  async markPickupArrival(id: number, ahora: Date) {
+    const e = this.envios.get(id) as Envio;
+    if (!e.llegada_recogida_en) this.envios.set(id, { ...e, llegada_recogida_en: ahora });
+  }
+  async markDestinationArrival(id: number, ahora: Date) {
+    const e = this.envios.get(id) as Envio;
+    if (!e.llegada_destino_en) this.envios.set(id, { ...e, llegada_destino_en: ahora });
   }
   async markDestinationVisited(id: number, ahora: Date) {
     this.envios.set(id, { ...(this.envios.get(id) as Envio), destino_visitado_en: ahora });
@@ -152,8 +171,8 @@ export class FakeDrivers implements DriverRepositoryPort {
     const c = await this.findById(id);
     if (c) Object.assign(c, { estado_aprobacion: estado, motivo_rechazo: motivo });
   }
-  async listApplicants(): Promise<ConductorPostulante[]> {
-    return this.conductores.filter((c) => c.estado_aprobacion !== 'Aprobado').map((c) => ({ ...c, documentos: [] }));
+  async listApplicants(): Promise<Conductor[]> {
+    return this.conductores.filter((c) => c.estado_aprobacion !== 'Aprobado');
   }
   async averageRating() {
     return null;
@@ -286,6 +305,34 @@ export function pasarelaFalsa(estado: 'pendiente' | 'aprobado' | 'rechazado' | '
 /** PagosService con repositorios falsos. */
 export function pagosFalsos(envios: FakeShipments, drivers: FakeDrivers, servicio: NotificationService, pasarela = pasarelaFalsa()) {
   const repo = new FakePagos();
-  const publicador = new PublicadorEnvios(envios, drivers, servicio);
-  return { repo, publicador, pasarela, servicio: new PagosService(repo, pasarela, envios, publicador, servicio) };
+  const reloj = () => new Date();
+  const publicador = new PublicadorEnvios(envios, drivers, servicio, reloj);
+  return { repo, publicador, pasarela, servicio: new PagosService(repo, pasarela, envios, publicador, servicio, reloj) };
 }
+
+export class FakeDocumentos implements DocumentoConductorRepositoryPort {
+  docs: DocumentoConductor[] = [];
+  async create(d: Omit<DocumentoConductor, 'id'>) {
+    const doc: DocumentoConductor = { estado: 'Pendiente', fecha_subida: new Date(Date.now() + this.docs.length), ...d, id: this.docs.length + 1 };
+    this.docs.push(doc);
+    return doc;
+  }
+  async findById(id: number) {
+    return this.docs.find((d) => d.id === id) ?? null;
+  }
+  async findByConductor(id: number) {
+    return this.docs.filter((d) => d.id_conductor === id).reverse();
+  }
+  async review(id: number, r: RevisionDocumento) {
+    const d = await this.findById(id);
+    if (d) Object.assign(d, { estado: r.estado, motivo_rechazo: r.motivo_rechazo, revisado_en: r.revisado_en, fecha_vencimiento: r.fecha_vencimiento ?? d.fecha_vencimiento });
+  }
+  async findVigilados() {
+    return this.docs.filter((d) => Boolean(d.fecha_vencimiento) || d.tipo_documento === 'Antecedentes');
+  }
+  async markWarned(id: number, f: Date) {
+    const d = await this.findById(id);
+    if (d) d.aviso_vencimiento_en = f;
+  }
+}
+

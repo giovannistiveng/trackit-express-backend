@@ -1,0 +1,106 @@
+# TrackIt Express en AWS (EC2): Caddy (HTTPS) → web (Nginx + Angular) → api (Node) → db (PostgreSQL).
+# Las imágenes las construye GitHub Actions y las publica en GitHub Container Registry (ghcr.io);
+# el servidor solo las descarga. Vive en /opt/trackit junto a su .env (ver README.md de esta carpeta).
+
+name: trackit
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-trackit_express}
+      POSTGRES_USER: ${DB_USER:-trackit}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      TZ: America/Bogota
+      PGTZ: America/Bogota
+    volumes:
+      - pg-datos:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [interna]
+
+  api:
+    image: ghcr.io/${GHCR_OWNER:?Define GHCR_OWNER en .env (tu usuario de GitHub en minúsculas)}/trackit-api:${VERSION_API:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: America/Bogota
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-trackit_express}
+      DB_USER: ${DB_USER:-trackit}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DATABASE_URL: ""
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env (mínimo 32 caracteres)}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      # Un solo dominio con HTTPS para la web y la API
+      PUBLIC_URL: https://${DOMINIO:?Define DOMINIO en .env}
+      FRONTEND_URL: https://${DOMINIO}
+      CORS_ORIGINS: https://${DOMINIO}
+      # Caddy + Nginx delante: así la API ve la IP real de cada usuario (límites por IP)
+      TRUST_PROXY: 2
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      NOMINATIM_CONTACT: ${NOMINATIM_CONTACT:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-TrackIt Express <no-responder@trackit.com.co>}
+      NEQUI_MODO: ${NEQUI_MODO:-simulado}
+      NEQUI_SIMULADO_SEGUNDOS: ${NEQUI_SIMULADO_SEGUNDOS:-8}
+      NEQUI_CLIENT_ID: ${NEQUI_CLIENT_ID:-}
+      NEQUI_CLIENT_SECRET: ${NEQUI_CLIENT_SECRET:-}
+      NEQUI_API_KEY: ${NEQUI_API_KEY:-}
+      NEQUI_CODIGO_COMERCIO: ${NEQUI_CODIGO_COMERCIO:-NIT_1}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:soporte@trackit.com.co}
+    volumes:
+      - api-datos:/app/datos
+    networks: [interna]
+
+  web:
+    image: ghcr.io/${GHCR_OWNER}/trackit-web:${VERSION_WEB:-latest}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [interna]
+
+  # HTTPS automático con Let's Encrypt (certificado gratis que se renueva solo)
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [web]
+    environment:
+      DOMINIO: ${DOMINIO}
+      CORREO_ADMIN: ${CORREO_ADMIN:?Define CORREO_ADMIN en .env (avisos de Let's Encrypt)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-datos:/data
+      - caddy-config:/config
+    networks: [interna]
+
+volumes:
+  pg-datos:
+  api-datos:
+  caddy-datos:
+  caddy-config:
+
+networks:
+  interna:

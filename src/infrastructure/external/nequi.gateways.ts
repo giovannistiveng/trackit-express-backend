@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import { EstadoGateway, PaymentGatewayPort } from '../../domain/ports/platform.ports';
 import { logger } from '../../shared/logger';
 
@@ -112,7 +112,7 @@ export class NequiConectaGateway implements PaymentGatewayPort {
       ResponseMessage?: { ResponseHeader?: { Status?: { StatusCode?: string; StatusDesc?: string } }; ResponseBody?: { any?: unknown } };
     } | null;
     const status = datos?.ResponseMessage?.ResponseHeader?.Status;
-    if (!r.ok || !status || status.StatusCode !== '0') {
+    if (!r.ok || status?.StatusCode !== '0') {
       log.warn(`Nequi ${operacion}: HTTP ${r.status} · ${status?.StatusCode ?? '-'} ${status?.StatusDesc ?? ''}`);
       throw new ErrorPasarela(status?.StatusDesc || 'Nequi no pudo procesar la solicitud', status?.StatusCode);
     }

@@ -3,5 +3,5 @@ import { VehicleCategory } from '../entities/vehicle.entity';
 
 export interface TarifaVehiculoRepositoryPort {
   findAll(): Promise<TarifaVehiculo[]>;
-  update(categoria: VehicleCategory, cambios: Omit<TarifaVehiculo, 'categoria'>): Promise<TarifaVehiculo | null>;
+  update(categoria: VehicleCategory, cambios: Omit<TarifaVehiculo, 'categoria'>): Promise<TarifaVehiculo>;
 }

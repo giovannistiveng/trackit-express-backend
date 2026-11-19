@@ -1,6 +1,6 @@
-import { randomBytes } from 'crypto';
-import { mkdirSync, writeFileSync } from 'fs';
-import path from 'path';
+import { randomBytes } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import nodemailer, { Transporter } from 'nodemailer';
 import { CorreoSaliente, MailerPort } from '../../domain/ports/platform.ports';
 import { logger } from '../../shared/logger';
@@ -50,7 +50,7 @@ export class BuzonLocalMailer implements MailerPort {
   async enviar(m: CorreoSaliente): Promise<void> {
     mkdirSync(this.carpeta, { recursive: true });
     const unico = randomBytes(3).toString('hex');
-    const nombre = `${new Date().toISOString().replace(/[:.]/g, '-')}-${unico}-${m.para.replace(/[^a-z0-9]/gi, '_')}.html`;
+    const nombre = `${new Date().toISOString().replaceAll(/[:.]/g, '-')}-${unico}-${m.para.replaceAll(/[^a-z0-9]/gi, '_')}.html`;
     const ruta = path.join(this.carpeta, nombre);
     writeFileSync(ruta, m.html, 'utf8');
     const enlace = /https?:\/\/[^\s"'<>]+/.exec(m.texto)?.[0];

@@ -24,8 +24,7 @@ ON CONFLICT (nombre_zona) DO NOTHING;
 -- Tarifas por vehículo (COP)
 INSERT INTO Tarifa_Vehiculo (categoria, banderazo, por_km, por_minuto, minimo) VALUES
     ('Moto Express', 2000, 700, 50, 4500),
-    ('Motocarro', 4000, 950, 80, 8000),
-    ('Camioneta', 10000, 1600, 120, 18000)
+    ('Furgoneta', 12000, 1800, 150, 22000)
 ON CONFLICT (categoria) DO NOTHING;
 
 -- Usuario administrador inicial

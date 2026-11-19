@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { AsuntoContacto, MensajeContacto } from '../../../domain/entities/contacto.entity';
 import { ContactRepositoryPort } from '../../../domain/ports/contact.repository.port';
+import { filasAfectadas } from '../pg-utils';
 
 interface ContactoRow {
   id_contacto: number;
@@ -50,11 +51,11 @@ export class ContactRepositoryPostgres implements ContactRepositoryPort {
 
   async markAttended(id: number): Promise<boolean> {
     const r = await this.pool.query('UPDATE Contacto SET atendido = TRUE WHERE id_contacto = $1', [id]);
-    return (r.rowCount ?? 0) > 0;
+    return filasAfectadas(r) > 0;
   }
 
   async delete(id: number): Promise<boolean> {
     const r = await this.pool.query('DELETE FROM Contacto WHERE id_contacto = $1', [id]);
-    return (r.rowCount ?? 0) > 0;
+    return filasAfectadas(r) > 0;
   }
 }
