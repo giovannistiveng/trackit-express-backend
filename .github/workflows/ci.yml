@@ -123,7 +123,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Preparar Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Se construye para comprobar que el Dockerfile funciona; no se publica en ningún registro
       - name: Construir la imagen
