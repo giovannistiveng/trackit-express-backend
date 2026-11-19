@@ -54,9 +54,41 @@ if (-not $ejecutable) {
   throw ('No encuentro JMeter (jmeter.bat). Descomprime el .zip de jmeter.apache.org en C:\ ' +
     '(queda C:\apache-jmeter-5.6.3) o pasa la ruta: -JMeter "C:\ruta\apache-jmeter-5.6.3"')
 }
-if (-not (Get-Command 'java' -ErrorAction SilentlyContinue)) {
-  throw 'No encuentro Java. Instala un JDK 17 o superior y abre una PowerShell nueva.'
+function Find-Java {
+  # JAVA_HOME, PATH de esta sesión, PATH guardado (por si la terminal se abrió antes de instalar)
+  # y las carpetas donde instalan Java Oracle, Adoptium, Microsoft y Zulu
+  $candidatos = @()
+  foreach ($h in @($env:JAVA_HOME, [Environment]::GetEnvironmentVariable('JAVA_HOME', 'Machine'),
+      [Environment]::GetEnvironmentVariable('JAVA_HOME', 'User'))) {
+    if ($h) { $candidatos += (Join-Path $h 'bin\java.exe') }
+  }
+  $enPath = Get-Command 'java' -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($enPath) { $candidatos += $enPath.Source }
+  $pathGuardado = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+  foreach ($d in $pathGuardado -split ';') {
+    if ($d) { $candidatos += (Join-Path ([Environment]::ExpandEnvironmentVariables($d)) 'java.exe') }
+  }
+  foreach ($base in @("$env:ProgramFiles\Java", "$env:ProgramFiles\Eclipse Adoptium", "$env:ProgramFiles\Microsoft",
+      "$env:ProgramFiles\Zulu", "$env:ProgramFiles\Common Files\Oracle\Java\javapath")) {
+    if (-not (Test-Path $base)) { continue }
+    $candidatos += (Join-Path $base 'java.exe')
+    foreach ($jdk in Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending) {
+      $candidatos += (Join-Path $jdk.FullName 'bin\java.exe')
+    }
+  }
+  foreach ($c in $candidatos) {
+    if ($c -and (Test-Path $c -PathType Leaf)) { return (Resolve-Path $c).Path }
+  }
+  return $null
 }
+
+$java = Find-Java
+if (-not $java) {
+  throw 'No encuentro Java. Instala un JDK 17 o superior (adoptium.net u oracle.com/java) y vuelve a intentarlo.'
+}
+# jmeter.bat usa el java del PATH: se pone primero el encontrado, solo para este proceso
+$env:Path = (Split-Path -Parent $java) + ';' + $env:Path
+Write-Host "Java: $java"
 Write-Host "JMeter: $ejecutable"
 
 $aqui = Split-Path -Parent $MyInvocation.MyCommand.Path
