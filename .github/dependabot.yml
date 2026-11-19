@@ -1,4 +1,6 @@
-# Actualizaciones automáticas de dependencias: un PR semanal agrupado (no rompe el CI de golpe)
+# Actualizaciones automáticas de dependencias hacia desarrollo.
+# Solo versiones menores y parches (las mayores, como Angular 21 → 22 o ESLint 9 → 10, se hacen a mano
+# con pruebas), agrupadas en un solo PR semanal; las acciones de GitHub, en un PR mensual.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -6,10 +8,13 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: "06:00"
+      time: '06:00'
       timezone: America/Bogota
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     target-branch: desarrollo
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
     groups:
       menores:
         update-types: [minor, patch]
@@ -18,3 +23,6 @@ updates:
     schedule:
       interval: monthly
     target-branch: desarrollo
+    groups:
+      acciones:
+        patterns: ['*']
