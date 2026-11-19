@@ -31,7 +31,7 @@ jobs:
       etiqueta: ${{ steps.datos.outputs.etiqueta }}
     steps:
       - name: Descargar el código
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -42,17 +42,17 @@ jobs:
           echo "etiqueta=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Iniciar sesión en ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Preparar Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Construir y publicar
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -77,7 +77,7 @@ jobs:
       USUARIO: ${{ vars.EC2_USUARIO || 'ubuntu' }}
     steps:
       - name: Descargar el código
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
