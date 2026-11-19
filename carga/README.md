@@ -27,19 +27,15 @@ que tarde más de `limite_ms` (2 s por defecto) cuenta como error.
 
 ## 1. Preparar el backend
 
-Las pruebas crean miles de usuarios y envíos: usa **una base de datos aparte**, nunca la de producción.
+Las pruebas crean miles de usuarios y envíos, así que usan **una base aparte** (`trackit_carga`), nunca la de
+desarrollo ni la de producción.
 
 ```powershell
-# 1. Crea la base vacía (psql, pgAdmin o Docker)
-psql -U postgres -c "CREATE DATABASE trackit_carga"
-
-# 2. Copia el entorno de carga y ajusta usuario y contraseña de PostgreSQL
-copy carga\.env.carga.example carga\.env.carga
-
-# 3. Compila y crea las tablas en esa base
+# 1. Con PostgreSQL encendido: crea carga/.env.carga (con el usuario y la clave de tu .env),
+#    crea la base trackit_carga y sus tablas
 npm run carga:preparar
 
-# 4. Levanta el backend en modo carga (déjalo corriendo en otra terminal)
+# 2. Levanta el backend en modo carga (déjalo corriendo en esta terminal)
 npm run carga:servidor
 ```
 
@@ -122,6 +118,7 @@ En `reporte/index.html`:
 ## Recomendaciones
 
 - Corre JMeter en un equipo distinto al del backend o, al menos, sin otros programas pesados abiertos.
-- Antes de repetir una prueba, puedes vaciar la base: `DROP DATABASE trackit_carga` y repetir el paso 1.
+- Antes de repetir una prueba puedes vaciar la base: bórrala (pgAdmin o `DROP DATABASE trackit_carga`) y repite
+  `npm run carga:preparar`.
 - Si ves errores `Non HTTP response code: java.net.BindException`, el equipo de JMeter se quedó sin puertos:
   baja los usuarios o sube la pausa.
